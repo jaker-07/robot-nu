@@ -1,0 +1,43 @@
+GE1501 AE1 Robot - Code Changelog
+Navigation files are listed in the order they were made (v8a came after v10).
+Current version: navigation/navigation_v12.py
+
+TEST SCRIPTS (tests/)
+- motor_test_v1: First motor test. Drives IN1-IN4 through left, right, both forward and both reverse, with the ENA/ENB caps fitted.
+- motor_test_v2: Enables driven from GP10/GP15 instead of the caps. Onboard LED shows countdown and motor status.
+- ultrasonic_test_v1: Prints left and right readings over USB. No echo = -1.
+- ultrasonic_test_v2: Left sensor moved to GP28/GP27. No echo now reads 400.
+- ultrasonic_test_v3: Front sensor added (GP18/GP19).
+- trim_test_v1: 4 s straight run with no steering to measure motor mismatch. Result: RIGHT_TRIM 0.90, LEFT_TRIM 1.0.
+
+NAVIGATION (navigation/)
+- v1: First version. 45 deg side sensors converted with d*cos45, proportional centring with a +/-2 cm deadband, front-sensor turns, stop when both sides open.
+- v2: Front sensor removed (not wired yet).
+- v3: Left sensor moved to GP28/GP27. Centring error capped at +/-8 cm.
+- v4: End stop removed. Minimum wheel power so both motors keep turning. Missed echoes hold the last good reading.
+- v5: Left/right motors swapped in software. Not needed.
+- v6: Both motor directions flipped (forward was driving backwards). First working version, after replacing the left sensor.
+- v6a: v6 with left/right motors swapped. Not needed.
+- v7: Base speed 45 -> 35. RIGHT_TRIM 0.95.
+- v7a: RIGHT_TRIM 0.90 from trim tests. Motor power limited to 45-60% (motors stall at low power). Base speed 52. Single drive() helper.
+- v7b: Base speed 60.
+- v8: Front sensor added; wall under 15 cm ahead -> sharp turn. Tuned on track: BASE 45, MIN 30, MAX 50, KP 3, DEADBAND 1, MAX_CM 55. Gets through the maze.
+- v9: REJECTED. Repeated misses count as open, hard-turn corner mode, deadband 2. Zig-zagged +/-45 deg and hit walls.
+- v10: REJECTED. v8 plus "repeated misses count as open" only. Also worse.
+- v8a: Wall-ahead turn direction taken from current readings and locked until the front is clear. Fixed turning around at the last bend.
+- v10a: Tuned v8a (BASE 50, MAX 65) plus a stop when both sides read open for 8 loops.
+- v11: Working tuned v8 saved as the baseline.
+- v11a: v11 plus the both-sides-open stop. Stopped at corners where the track widens.
+- v11b: End check only armed after a set time. Did not recognise the end.
+- v11c: Once armed, corner turns off and stop when the front is under 10 cm.
+- v11d: Stop distance 8 cm. LED shows when the end check is armed.
+- v11e: No timer. Stop when front under 8 cm and a side reads no echo. Stopped on a straight.
+- v11f: v11e plus per-loop CSV logging on the Pico (run_N.csv).
+- v11g: Stop needs both conditions for 2 loops in a row. Stop distance 5 cm.
+- v11h: Sensors read like the test script, sensor status logged, big readings ignored for steering. Navigation changed and it no longer got through the maze.
+- v12: v8 navigation unchanged plus the end stop (front under 5 cm and a side open, 2 loops in a row). No logging. CURRENT.
+
+KEY FINDINGS
+- Holding the last good reading keeps navigation stable; weakening it (v9, v10) made runs worse.
+- Logs showed v8's left sensor returning no echo, so v8 mainly follows the right wall plus front-sensor turns.
+- Change one thing per test; bundled changes (v9) could not be traced to a cause.
