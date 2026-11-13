@@ -1,7 +1,12 @@
 """
-main_v20b.py   GE1501 AE1 robot: corridor navigation, end detection, three tasks.
+main_v20c.py   GE1501 AE1 robot: corridor navigation, end detection, three tasks.
 
-Changes from main_v20a:
+Changes from main_v20b:
+- Buzzer connected on GP26.
+- Task times: light 2 s, buzzer 5 s, spin task 10 s in total (SPIN_TASK_TIME:
+  back-up + pause + spin). Spin not yet tested: tune SPIN_TASK_TIME for one 360 deg.
+
+Changes in v20b from main_v20a:
 - LED strip (WS2812, 5 LEDs, GP27) replaces the plain on/off light pin:
   green startup sequence during the start delay, task_light() lights the strip,
   stop_all() switches it off.
@@ -38,7 +43,7 @@ Wiring (as built):
   Ultrasonic L  TRIG GP16 (pin 21), ECHO GP17 (pin 22)
   Ultrasonic F  TRIG GP18 (pin 24), ECHO GP19 (pin 25)
   Ultrasonic R  TRIG GP20 (pin 26), ECHO GP21 (pin 27)
-  Task parts    LED strip DIN GP27 (WS2812, 5 LEDs), IR OUT GP22, buzzer GP26 (not connected yet)
+  Task parts    LED strip DIN GP27 (WS2812, 5 LEDs), IR OUT GP22, buzzer GP26
 ENA/ENB jumper caps OFF. No echo dividers fitted (ECHO goes straight to the Pico).
 """
 
@@ -51,7 +56,7 @@ L_TRIG, L_ECHO = 16, 17
 F_TRIG, F_ECHO = 18, 19
 R_TRIG, R_ECHO = 20, 21
 IR_PIN = 22          # IR module OUT (task detection) - connected
-BUZZER_PIN = 26      # buzzer - not connected yet
+BUZZER_PIN = 26      # buzzer - connected
 LIGHT_PIN = 27       # LED strip data in (WS2812) - connected
 NUM_LEDS = 5         # strip cut after LED 5
 
@@ -81,14 +86,16 @@ ECHO_TIMEOUT_US = 6000   # us: about 1 m; needed so "no echo" means open room
 # ================= TASK TUNING =================
 TASK_TEST = None     # None = use detect_task(); 1 buzzer, 2 light, 3 spin to test a task
 BUZZ_FREQ = 2000     # Hz
-BUZZ_TIME = 2.0      # s
-LIGHT_TIME = 3.0     # s
+BUZZ_TIME = 5.0      # s
+LIGHT_TIME = 2.0     # s
 LIGHT_COLOUR = (0, 120, 0)   # (red, green, blue) 0-255 for the light task
 DIM = (0, 25, 0)             # startup sequence trail
 BRIGHT = (0, 120, 0)         # startup sequence head and flashes
+SPIN_TASK_TIME = 10.0   # s for the whole spin task (back-up + pause + spin) - TUNE for one 360 deg
 BACKUP_TIME = 0.5    # s reversing away from the Task Decider before spinning
+SPIN_PAUSE = 0.2     # s stopped between backing up and spinning
 SPIN_SPEED = 45      # % power for the spin
-SPIN_TIME = 2.0      # s for a full 360 deg - CALIBRATE on the real floor
+SPIN_TIME = SPIN_TASK_TIME - BACKUP_TIME - SPIN_PAUSE   # s spinning (9.3 s now)
 
 DEBUG = False        # True = print readings each loop (USB only)
 
@@ -310,7 +317,7 @@ def task_spin():
     set_motors(-BASE_SPEED, -BASE_SPEED)
     time.sleep(BACKUP_TIME)
     set_motors(0, 0)
-    time.sleep(0.2)
+    time.sleep(SPIN_PAUSE)
     set_motors(SPIN_SPEED, -SPIN_SPEED)     # left forward, right reverse
     time.sleep(SPIN_TIME)
     set_motors(0, 0)
