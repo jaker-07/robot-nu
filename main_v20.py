@@ -1,41 +1,22 @@
 """
-main_v20c.py   GE1501 AE1 robot: corridor navigation, end detection, three tasks.
+main_v20e.py   GE1501 AE1 robot: corridor navigation, end detection, three tasks.
 
-Changes from main_v20b:
-- Buzzer connected on GP26.
-- Task times: light 2 s, buzzer 5 s, spin task 10 s in total (SPIN_TASK_TIME:
-  back-up + pause + spin). Spin not yet tested: tune SPIN_TASK_TIME for one 360 deg.
+Changes from main_v20d (settings from ir_task_test_v2 results):
+- Task detection: after stopping, the robot waits (up to TASK_WAIT_S) for the
+  Task Decider's flag to stay in front of the IR sensor for HOLD_TIME (3 s);
+  removing it early resets the timer. It then runs FLAG_TASK (placeholder until
+  we know how the decider picks between the three tasks).
+- Buzzer 1 s (placeholder for a song).
+- Spin is one turn: back up 0.5 s at 40 %, pause 0.2 s, spin for SPIN_TIME (1.5 s,
+  the slider) at SPIN_SPEED. SPIN_TASK_TIME removed.
 
-Changes in v20b from main_v20a:
-- LED strip (WS2812, 5 LEDs, GP27) replaces the plain on/off light pin:
-  green startup sequence during the start delay, task_light() lights the strip,
-  stop_all() switches it off.
-- IR sensor connected on GP22 (detection logic still to come).
-
-Changes in v20a from main_v20 (v20 never stopped at the end and was a bit jittery):
-- End check back to the v19 rule: a side counts as open if it has no echo, a
-  reading at or beyond MAX_CM, OR the sensor is still busy. Past the end the open
-  side alternates between "no echo" and "busy" (an HC-SR04 holds its echo line high
-  after a miss), so v20, which excluded busy, kept resetting its count and never stopped.
-- No gap between the right and front pings (v19 timing). The extra 5 ms in v20
-  slowed every loop; GAP_RF_MS is still there if front crosstalk shows up.
-- Pin comments updated: LED on GP27 connected; IR and buzzer not connected yet.
-
-Changes in v20 from main_v19 (code audit fixes):
-- Task stage added: detect_task() plus task_buzzer(), task_light(), task_spin(),
-  selected by one if/elif. Detection is a stub until the Task Decider's signal is
-  known (set TASK_TEST to 1, 2 or 3 to run a task).
-- Motors, buzzer and light are switched off however the program ends (try/finally).
-- A busy sensor no longer reads as "no echo": sides hold their last value, the
-  front keeps its last reading, and a busy side never counts as open.
-- End check needed a side with NO echo at all (reverted in v20a).
-- Pivot direction comes from the current readings and is locked until the front
-  clears; ties fall back to held values, then the last turn, not always right.
-- 5 ms gap between the right and front pings (crosstalk), like the 10 ms left/right gap.
-- Limits applied before trim, so the trim holds even at the 25-55 % limits.
-- Run timeout (RUN_TIMEOUT_S) so the robot stops if it never finds the end.
-- Docstring and comments corrected; math import, duplicate side code and the
-  commented-out print replaced (COS45 constant, wall_distance(), DEBUG flag).
+Changes in v20d from main_v20c:
+- Driving back to the v19 style: busy or no echo both read MAX_CM, v19 end check,
+  pivot towards the larger held wall distance, v19 loop timing and motor limits.
+  Kept from v20: run timeout, everything switched off however the program ends.
+- Buzzer is now a plain on/off pin with the tone made in software. GP26 shares a
+  PWM channel with ENA (GP10, slice 5A), so as a PWM pin it copied the left
+  motor's signal and buzzed whenever the motors ran.
 
 Wiring (as built):
   L298N         ENA GP10, IN1 GP11, IN2 GP12, IN3 GP13, IN4 GP14, ENB GP15
@@ -43,7 +24,9 @@ Wiring (as built):
   Ultrasonic L  TRIG GP16 (pin 21), ECHO GP17 (pin 22)
   Ultrasonic F  TRIG GP18 (pin 24), ECHO GP19 (pin 25)
   Ultrasonic R  TRIG GP20 (pin 26), ECHO GP21 (pin 27)
-  Task parts    LED strip DIN GP27 (WS2812, 5 LEDs), IR OUT GP22, buzzer GP26
+  IR module     OUT GP22
+  Buzzer        GP26 and GND
+  LED strip     DIN GP27 (WS2812, 5 LEDs)
 ENA/ENB jumper caps OFF. No echo dividers fitted (ECHO goes straight to the Pico).
 """
 
@@ -55,9 +38,9 @@ import neopixel
 L_TRIG, L_ECHO = 16, 17
 F_TRIG, F_ECHO = 18, 19
 R_TRIG, R_ECHO = 20, 21
-IR_PIN = 22          # IR module OUT (task detection) - connected
-BUZZER_PIN = 26      # buzzer - connected
-LIGHT_PIN = 27       # LED strip data in (WS2812) - connected
+IR_PIN = 22          # IR module OUT (task detection)
+BUZZER_PIN = 26      # buzzer (plain pin, see docstring)
+LIGHT_PIN = 27       # LED strip data in (WS2812)
 NUM_LEDS = 5         # strip cut after LED 5
 
 # ================= NAVIGATION TUNING =================
@@ -70,37 +53,31 @@ KP = 1.5             # % power change per cm of centring error
 DEADBAND = 2         # cm of error (about +/-1 cm off centre): no correction inside this
 MAX_ERR = 8          # cm: largest error acted on
 FRONT_TURN_CM = 8    # cm: wall closer than this ahead -> pivot
-MAX_CM = 65          # cm: readings are capped here; at or above = no usable wall reading
+MAX_CM = 65          # cm: readings capped here; busy or no echo also read MAX_CM
 STOP_CM = 12         # cm: end = front closer than this AND a side open
 END_CONFIRM = 3      # loops in a row both end conditions must hold
 RUN_TIMEOUT_S = 60   # s: stop if the end is not found within this time
-COS45 = 0.7071       # cos(45 deg): beam reading -> perpendicular wall distance
-
-# ================= TIMING =================
-GAP_LR_MS = 10       # ms between left and right pings (crosstalk)
-GAP_RF_MS = 0        # ms between right and front pings (0 = v19 timing; try 5 if the front
-                     # starts picking up the right sensor's echoes)
-LOOP_PAUSE_MS = 5    # ms at the end of each loop
-ECHO_TIMEOUT_US = 6000   # us: about 1 m; needed so "no echo" means open room
+COS45 = 0.70710678   # cos(45 deg): beam reading -> perpendicular wall distance
 
 # ================= TASK TUNING =================
-TASK_TEST = None     # None = use detect_task(); 1 buzzer, 2 light, 3 spin to test a task
-BUZZ_FREQ = 2000     # Hz
-BUZZ_TIME = 5.0      # s
+HOLD_TIME = 3.0      # s the Task Decider's flag must stay in front of the IR sensor
+TASK_WAIT_S = 60     # s to wait for the flag after stopping before giving up
+IR_ACTIVE_LOW = True # IR module reads 0 when it detects
+FLAG_TASK = 1        # task run when the flag is held: 1 buzzer, 2 light, 3 spin (placeholder)
+BUZZER_ACTIVE = False    # True = active buzzer (sounds with plain power); False = needs a tone
+BUZZ_FREQ = 2000     # Hz tone for a passive buzzer
+BUZZ_TIME = 1.0      # s (placeholder for a song)
 LIGHT_TIME = 2.0     # s
 LIGHT_COLOUR = (0, 120, 0)   # (red, green, blue) 0-255 for the light task
 DIM = (0, 25, 0)             # startup sequence trail
 BRIGHT = (0, 120, 0)         # startup sequence head and flashes
-SPIN_TASK_TIME = 10.0   # s for the whole spin task (back-up + pause + spin) - TUNE for one 360 deg
 BACKUP_TIME = 0.5    # s reversing away from the Task Decider before spinning
+BACKUP_SPEED = 40    # % power for backing up
 SPIN_PAUSE = 0.2     # s stopped between backing up and spinning
-SPIN_SPEED = 45      # % power for the spin
-SPIN_TIME = SPIN_TASK_TIME - BACKUP_TIME - SPIN_PAUSE   # s spinning (9.3 s now)
+SPIN_SPEED = 85      # % power for the spin (drive() caps it at MAX_SPEED, so 55 % now)
+SPIN_TIME = 1.5      # s  <-- SLIDER: tune until the robot turns exactly 360 deg
 
 DEBUG = False        # True = print readings each loop (USB only)
-
-BUSY = -1            # read_cm(): sensor still busy, no new reading
-NO_ECHO = 999        # read_cm(): no echo at all (nothing within about 1 m)
 
 # ================= MOTORS (L298N) =================
 left_en = PWM(Pin(10))          # ENA
@@ -113,29 +90,26 @@ left_en.freq(1000)
 right_en.freq(1000)
 
 
-def limit(power):
-    """Keep a non-zero motor command between MIN_SPEED and MAX_SPEED, sign kept."""
-    if power == 0:
-        return 0
-    size = max(MIN_SPEED, min(MAX_SPEED, abs(power)))
-    return size if power > 0 else -size
-
-
 def drive(en, fwd, rev, power):
-    """Run one motor at power % (negative = reverse, 0 = stop)."""
-    if power >= 0:
+    """Run one motor. power in % (negative = reverse, 0 = stop).
+    Any non-zero power is kept between MIN_SPEED and MAX_SPEED."""
+    if power == 0:
+        en.duty_u16(0)
+        return
+    if power > 0:
         fwd.on()
         rev.off()
     else:
         fwd.off()
         rev.on()
-    en.duty_u16(int(abs(power) * 655.35))
+    power = max(MIN_SPEED, min(MAX_SPEED, abs(power)))
+    en.duty_u16(int(power * 655))
 
 
 def set_motors(left, right):
-    """Set both wheels in %: limits first, then trims, so the trim always holds."""
-    drive(left_en, left_fwd, left_rev, limit(left) * LEFT_TRIM)
-    drive(right_en, right_fwd, right_rev, limit(right) * RIGHT_TRIM)
+    """Set both wheels in % (negative = reverse, 0 = stop), with trims."""
+    drive(left_en, left_fwd, left_rev, left * LEFT_TRIM)
+    drive(right_en, right_fwd, right_rev, right * RIGHT_TRIM)
 
 
 # ================= SENSORS =================
@@ -148,50 +122,28 @@ echo_r = Pin(R_ECHO, Pin.IN)
 ir_in = Pin(IR_PIN, Pin.IN)
 
 
+def ir_detected():
+    """True while the IR sensor sees something (the Task Decider's flag)."""
+    return ir_in.value() == (0 if IR_ACTIVE_LOW else 1)
+
+
 def read_cm(trig, echo):
-    """One ping along the sensor's axis. Returns cm (capped at MAX_CM),
-    NO_ECHO if nothing came back, or BUSY if the sensor was still busy."""
-    if echo.value() == 1:
-        return BUSY
+    """One distance reading in cm along the sensor's axis.
+    Returns MAX_CM when the sensor is busy or no echo comes back."""
+    if echo.value() == 1:                  # sensor still busy from last ping
+        return MAX_CM
     trig.on()
     time.sleep_us(10)
     trig.off()
-    pulse = time_pulse_us(echo, 1, ECHO_TIMEOUT_US)
-    if pulse < 0:
-        return NO_ECHO
-    return min(pulse / 58, MAX_CM)          # 58 us per cm, there and back
-
-
-def wall_distance(raw, held):
-    """Perpendicular wall distance from a side reading; keeps the last good value
-    when the reading is busy, missing or at the cap."""
-    if 0 <= raw < MAX_CM:
-        return raw * COS45
-    return held
-
-
-def side_open(raw):
-    """True if this side shows open space (end check only): no echo, a reading at or
-    beyond MAX_CM, or busy (after a miss the sensor stays busy, so busy means open too)."""
-    return raw == BUSY or raw >= MAX_CM
-
-
-def pivot_direction(raw_left, raw_right, left, right, last_dir):
-    """+1 = turn left, -1 = turn right: towards the side that is more open now.
-    Busy readings use the held value; ties fall back to held values, then last turn."""
-    rl = raw_left if raw_left != BUSY else left / COS45
-    rr = raw_right if raw_right != BUSY else right / COS45
-    if rl != rr:
-        return 1 if rl > rr else -1
-    if left != right:
-        return 1 if left > right else -1
-    return last_dir
+    pulse = time_pulse_us(echo, 1, 6000)   # 6 ms timeout, about 100 cm
+    if pulse < 0:                          # no echo
+        return MAX_CM
+    return min(pulse / 58, MAX_CM)         # 58 us per cm, there and back
 
 
 # ================= OUTPUTS =================
-led = Pin(25, Pin.OUT)              # onboard LED: on while navigating
-buzzer = PWM(Pin(BUZZER_PIN))
-buzzer.duty_u16(0)
+led = Pin(25, Pin.OUT)                     # onboard LED: on while navigating
+buzzer = Pin(BUZZER_PIN, Pin.OUT, value=0)
 strip = neopixel.NeoPixel(Pin(LIGHT_PIN), NUM_LEDS)
 
 
@@ -205,19 +157,19 @@ def strip_fill(colour):
 def startup_lights():
     """Green loading sequence (about 2 s): sweep, two flashes, fade out."""
     strip_fill((0, 0, 0))
-    for i in range(NUM_LEDS):           # loading bar: bright head, dim trail
+    for i in range(NUM_LEDS):              # loading bar: bright head, dim trail
         strip[i] = BRIGHT
         if i > 0:
             strip[i - 1] = DIM
         strip.write()
         time.sleep_ms(180)
-    for _ in range(2):                  # two flashes = ready
+    for _ in range(2):                     # two flashes = ready
         strip_fill(BRIGHT)
         time.sleep_ms(150)
         strip_fill((0, 0, 0))
         time.sleep_ms(150)
     strip_fill(BRIGHT)
-    for level in range(120, -1, -8):    # fade out
+    for level in range(120, -1, -8):       # fade out
         strip_fill((0, level, 0))
         time.sleep_ms(25)
 
@@ -225,7 +177,7 @@ def startup_lights():
 def stop_all():
     """Motors, buzzer and LED strip off."""
     set_motors(0, 0)
-    buzzer.duty_u16(0)
+    buzzer.off()
     strip_fill((0, 0, 0))
 
 
@@ -233,24 +185,21 @@ def stop_all():
 def navigate():
     """Drive the corridor until the end is confirmed (returns True)
     or RUN_TIMEOUT_S passes (returns False)."""
-    left = right = 10.0             # held wall distances; equal so it starts straight
-    front = NO_ECHO
-    end_count = 0
-    turn_dir = 0                    # 0 = not pivoting, 1 = left, -1 = right
-    last_dir = -1
+    left = 10.0                            # equal starting values,
+    right = 10.0                           # so the robot starts straight
+    end_count = 0                          # loops in a row with both end conditions
     start = time.ticks_ms()
 
     while time.ticks_diff(time.ticks_ms(), start) < RUN_TIMEOUT_S * 1000:
         raw_left = read_cm(trig_l, echo_l)
-        time.sleep_ms(GAP_LR_MS)
+        time.sleep_ms(10)                  # let left's echoes die out
         raw_right = read_cm(trig_r, echo_r)
-        time.sleep_ms(GAP_RF_MS)
-        raw_front = read_cm(trig_f, echo_f)
-        if raw_front != BUSY:           # busy front: keep the last reading
-            front = raw_front
+        front = read_cm(trig_f, echo_f)    # a miss reads MAX_CM = clear ahead
 
-        # End of course: front close AND a side open, END_CONFIRM loops in a row
-        if front < STOP_CM and (side_open(raw_left) or side_open(raw_right)):
+        # End of course: BOTH must be true, for END_CONFIRM loops in a row:
+        #   1. front closer than STOP_CM (Task Decider)
+        #   2. at least one side reads open (MAX_CM)
+        if front < STOP_CM and (raw_left >= MAX_CM or raw_right >= MAX_CM):
             end_count += 1
         else:
             end_count = 0
@@ -258,22 +207,21 @@ def navigate():
             set_motors(0, 0)
             return True
 
-        left = wall_distance(raw_left, left)
-        right = wall_distance(raw_right, right)
+        # Only update on a good echo; a miss keeps the last good value
+        if raw_left < MAX_CM:
+            left = raw_left * COS45        # perpendicular distance, left wall
+        if raw_right < MAX_CM:
+            right = raw_right * COS45      # perpendicular distance, right wall
         if DEBUG:
             print(raw_left, raw_right, front, left, right)
 
         if front < FRONT_TURN_CM:
-            # Wall ahead: pivot towards the open side, direction locked until clear
-            if turn_dir == 0:
-                turn_dir = pivot_direction(raw_left, raw_right, left, right, last_dir)
-                last_dir = turn_dir
-            if turn_dir == 1:
-                set_motors(0, MAX_SPEED)    # stop left wheel -> turn left
+            # Wall ahead: sharp turn towards the more open side
+            if left > right:
+                set_motors(0, MAX_SPEED)   # stop left wheel -> turn left
             else:
-                set_motors(MAX_SPEED, 0)    # stop right wheel -> turn right
+                set_motors(MAX_SPEED, 0)   # stop right wheel -> turn right
         else:
-            turn_dir = 0
             # Centring: positive error = closer to the right wall, so steer left
             error = left - right
             if abs(error) <= DEADBAND:
@@ -281,28 +229,52 @@ def navigate():
             error = max(-MAX_ERR, min(MAX_ERR, error))
             set_motors(BASE_SPEED - KP * error, BASE_SPEED + KP * error)
 
-        time.sleep_ms(LOOP_PAUSE_MS)
+        time.sleep_ms(5)
 
     set_motors(0, 0)
     return False
 
 
 # ================= TASK DETECTION =================
+def flag_held():
+    """Wait while the flag is in front of the IR sensor. True once it has stayed
+    there for HOLD_TIME seconds; False if it is removed before that."""
+    start = time.ticks_ms()
+    while ir_detected():
+        if time.ticks_diff(time.ticks_ms(), start) >= HOLD_TIME * 1000:
+            return True
+        time.sleep_ms(20)
+    return False
+
+
 def detect_task():
-    """Which task the Task Decider asks for: 1 buzzer, 2 light, 3 spin, None = unknown.
-    STUB: the decider's signal format is not known yet. ir_in is set up on IR_PIN
-    (IR modules read 0 when they detect); replace this body once the signal is known.
-    Until then it returns TASK_TEST."""
-    return TASK_TEST
+    """Wait up to TASK_WAIT_S for the flag to be held for HOLD_TIME, then return the
+    task to run (1 buzzer, 2 light, 3 spin), or None if no flag comes.
+    Which task: FLAG_TASK for now, until we know how the decider chooses."""
+    start = time.ticks_ms()
+    while time.ticks_diff(time.ticks_ms(), start) < TASK_WAIT_S * 1000:
+        if ir_detected() and flag_held():
+            return FLAG_TASK
+        time.sleep_ms(20)
+    return None
 
 
 # ================= TASKS =================
 def task_buzzer():
-    """Task 1: a clear tone for BUZZ_TIME seconds."""
-    buzzer.freq(BUZZ_FREQ)
-    buzzer.duty_u16(32768)              # 50 % duty
-    time.sleep(BUZZ_TIME)
-    buzzer.duty_u16(0)
+    """Task 1: buzzer for BUZZ_TIME seconds (software tone for a passive buzzer)."""
+    end = time.ticks_add(time.ticks_ms(), int(BUZZ_TIME * 1000))
+    if BUZZER_ACTIVE:
+        buzzer.on()
+        while time.ticks_diff(end, time.ticks_ms()) > 0:
+            time.sleep_ms(10)
+    else:
+        half_us = 500000 // BUZZ_FREQ      # half a tone period in microseconds
+        while time.ticks_diff(end, time.ticks_ms()) > 0:
+            buzzer.on()
+            time.sleep_us(half_us)
+            buzzer.off()
+            time.sleep_us(half_us)
+    buzzer.off()
 
 
 def task_light():
@@ -313,12 +285,12 @@ def task_light():
 
 
 def task_spin():
-    """Task 3: back away from the Task Decider, then one full turn on the spot."""
-    set_motors(-BASE_SPEED, -BASE_SPEED)
+    """Task 3: back away from the Task Decider, then one turn on the spot."""
+    set_motors(-BACKUP_SPEED, -BACKUP_SPEED)
     time.sleep(BACKUP_TIME)
     set_motors(0, 0)
     time.sleep(SPIN_PAUSE)
-    set_motors(SPIN_SPEED, -SPIN_SPEED)     # left forward, right reverse
+    set_motors(SPIN_SPEED, -SPIN_SPEED)    # left forward, right reverse
     time.sleep(SPIN_TIME)
     set_motors(0, 0)
 
@@ -335,8 +307,8 @@ def no_task():
 # ================= MAIN =================
 try:
     stop_all()
-    startup_lights()                    # about 2 s of the start delay
-    time.sleep(1)                       # rest of the time to put the robot down
+    startup_lights()                       # about 2 s of the start delay
+    time.sleep(1)                          # rest of the time to put the robot down
     led.on()
     if navigate():
         task = detect_task()
@@ -349,5 +321,5 @@ try:
         else:
             no_task()
 finally:
-    stop_all()                          # always stop, however the program ends
+    stop_all()                             # always stop, however the program ends
     led.off()
