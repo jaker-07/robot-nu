@@ -13,7 +13,7 @@ import math
 
 # PIN NUMBERS (GP) 
 L_TRIG = 16
-L_ECHO = 17
+L_ECHO = 17 
 F_TRIG = 18
 F_ECHO = 19
 R_TRIG = 20
@@ -22,15 +22,15 @@ R_ECHO = 21
 # TUNING  
 BASE_SPEED = 40      # % power driving straight 
 MIN_SPEED = 25       # % lowest power sent to a motor 
-MAX_SPEED = 50      # % highest power sent to a motor
+MAX_SPEED = 55      # % highest power sent to a motor
 LEFT_TRIM = 1.0
-RIGHT_TRIM = 0.95     # right motor is stronger (from trim_test_v1.py)
+RIGHT_TRIM = 0.92     # right motor is stronger (from trim_test_v1.py)
 KP = 1.5            # % power change per cm of centring error
 DEADBAND = 2        # cm: no correction while within +/-2 cm of centre
 MAX_ERR = 8          # cm: largest error acted on
-FRONT_TURN_CM = 10   # cm: wall closer than this ahead -> sharp turn
-MAX_CM = 55          # readings at or above this count as a missed echo
-STOP_CM = 14          # cm: end = front closer than this AND a side open
+FRONT_TURN_CM = 8  # cm: wall closer than this ahead -> sharp turn
+MAX_CM = 65          # readings at or above this count as a missed echo
+STOP_CM = 12         # cm: end = front closer than this AND a side open
 END_CONFIRM = 3      # loops in a row BOTH must be true (ignores one-off glitches)
 COS45 = math.cos(math.pi / 4)
 
@@ -144,6 +144,8 @@ while True:
     time.sleep_ms(5)
 
 # need to add task detection and stuff here
+
+
 
 
 
