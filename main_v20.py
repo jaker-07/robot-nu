@@ -1,15 +1,23 @@
 """
-main_v20.py   GE1501 AE1 robot: corridor navigation, end detection, three tasks.
+main_v20a.py   GE1501 AE1 robot: corridor navigation, end detection, three tasks.
 
-Changes from main_v19 (code audit fixes):
+Changes from main_v20 (v20 never stopped at the end and was a bit jittery):
+- End check back to the v19 rule: a side counts as open if it has no echo, a
+  reading at or beyond MAX_CM, OR the sensor is still busy. Past the end the open
+  side alternates between "no echo" and "busy" (an HC-SR04 holds its echo line high
+  after a miss), so v20, which excluded busy, kept resetting its count and never stopped.
+- No gap between the right and front pings (v19 timing). The extra 5 ms in v20
+  slowed every loop; GAP_RF_MS is still there if front crosstalk shows up.
+- Pin comments updated: LED on GP27 connected; IR and buzzer not connected yet.
+
+Changes in v20 from main_v19 (code audit fixes):
 - Task stage added: detect_task() plus task_buzzer(), task_light(), task_spin(),
   selected by one if/elif. Detection is a stub until the Task Decider's signal is
   known (set TASK_TEST to 1, 2 or 3 to run a task).
 - Motors, buzzer and light are switched off however the program ends (try/finally).
 - A busy sensor no longer reads as "no echo": sides hold their last value, the
   front keeps its last reading, and a busy side never counts as open.
-- End check needs a side with NO echo at all (open room past the course), not just a
-  far reading, so a corner's far wall no longer looks like the end.
+- End check needed a side with NO echo at all (reverted in v20a).
 - Pivot direction comes from the current readings and is locked until the front
   clears; ties fall back to held values, then the last turn, not always right.
 - 5 ms gap between the right and front pings (crosstalk), like the 10 ms left/right gap.
@@ -24,7 +32,7 @@ Wiring (as built):
   Ultrasonic L  TRIG GP16 (pin 21), ECHO GP17 (pin 22)
   Ultrasonic F  TRIG GP18 (pin 24), ECHO GP19 (pin 25)
   Ultrasonic R  TRIG GP20 (pin 26), ECHO GP21 (pin 27)
-  Task parts    IR OUT GP22, buzzer GP26, light GP27  (CONFIRM against wiring)
+  Task parts    LED GP27 (connected); IR OUT GP22 and buzzer GP26 planned
 ENA/ENB jumper caps OFF. No echo dividers fitted (ECHO goes straight to the Pico).
 """
 
@@ -35,9 +43,9 @@ import time
 L_TRIG, L_ECHO = 16, 17
 F_TRIG, F_ECHO = 18, 19
 R_TRIG, R_ECHO = 20, 21
-IR_PIN = 22          # IR module OUT (task detection) - confirm
-BUZZER_PIN = 26      # buzzer - confirm
-LIGHT_PIN = 27       # light / LED strip switch - confirm
+IR_PIN = 22          # IR module OUT (task detection) - not connected yet
+BUZZER_PIN = 26      # buzzer - not connected yet
+LIGHT_PIN = 27       # LED - connected
 
 # ================= NAVIGATION TUNING =================
 BASE_SPEED = 40      # % power driving straight
@@ -50,15 +58,15 @@ DEADBAND = 2         # cm of error (about +/-1 cm off centre): no correction ins
 MAX_ERR = 8          # cm: largest error acted on
 FRONT_TURN_CM = 8    # cm: wall closer than this ahead -> pivot
 MAX_CM = 65          # cm: readings are capped here; at or above = no usable wall reading
-STOP_CM = 12         # cm: end = front closer than this AND a side with no echo
+STOP_CM = 12         # cm: end = front closer than this AND a side open
 END_CONFIRM = 3      # loops in a row both end conditions must hold
-END_NEEDS_NO_ECHO = True   # False = v19 rule (any side at or beyond MAX_CM counts as open)
 RUN_TIMEOUT_S = 60   # s: stop if the end is not found within this time
 COS45 = 0.7071       # cos(45 deg): beam reading -> perpendicular wall distance
 
 # ================= TIMING =================
 GAP_LR_MS = 10       # ms between left and right pings (crosstalk)
-GAP_RF_MS = 5        # ms between right and front pings (crosstalk)
+GAP_RF_MS = 0        # ms between right and front pings (0 = v19 timing; try 5 if the front
+                     # starts picking up the right sensor's echoes)
 LOOP_PAUSE_MS = 5    # ms at the end of each loop
 ECHO_TIMEOUT_US = 6000   # us: about 1 m; needed so "no echo" means open room
 
@@ -145,10 +153,9 @@ def wall_distance(raw, held):
 
 
 def side_open(raw):
-    """True if this side shows open space (used only for the end check)."""
-    if END_NEEDS_NO_ECHO:
-        return raw == NO_ECHO
-    return raw >= MAX_CM
+    """True if this side shows open space (end check only): no echo, a reading at or
+    beyond MAX_CM, or busy (after a miss the sensor stays busy, so busy means open too)."""
+    return raw == BUSY or raw >= MAX_CM
 
 
 def pivot_direction(raw_left, raw_right, left, right, last_dir):
