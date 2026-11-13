@@ -1,7 +1,21 @@
 """
-main_v20e.py   GE1501 AE1 robot: corridor navigation, end detection, three tasks.
+main_v20g.py   GE1501 AE1 robot: corridor navigation, end detection, three tasks.
 
-Changes from main_v20d (settings from ir_task_test_v2 results):
+Changes from main_v20f:
+- Task signal is how LONG the one flag stays in front of the IR sensor:
+  about 3 s = buzzer, 5 s = light, 10 s = spin. The robot times the hold and only
+  chooses once the flag has gone, so a 10 s spin signal can't fire the buzzer at 3 s.
+  Holds under MIN_HOLD are ignored; a flag never taken away counts as spin after MAX_HOLD.
+  (Replaces v20f's flag counting.)
+
+Changes in v20f from main_v20e:
+- Driving: two pieces of the first v20 brought back to stop twitching:
+  5 ms gap between the right and front pings (GAP_RF_MS; stray right-sensor
+  echoes could fake a wall ahead and cause a one-loop pivot), and the pivot
+  direction is held until the front is clear (no left/right flip-flop mid-turn).
+  End check stays the v19 rule.
+
+Changes in v20e from main_v20d (settings from ir_task_test_v2 results):
 - Task detection: after stopping, the robot waits (up to TASK_WAIT_S) for the
   Task Decider's flag to stay in front of the IR sensor for HOLD_TIME (3 s);
   removing it early resets the timer. It then runs FLAG_TASK (placeholder until
@@ -58,12 +72,16 @@ STOP_CM = 12         # cm: end = front closer than this AND a side open
 END_CONFIRM = 3      # loops in a row both end conditions must hold
 RUN_TIMEOUT_S = 60   # s: stop if the end is not found within this time
 COS45 = 0.70710678   # cos(45 deg): beam reading -> perpendicular wall distance
+GAP_RF_MS = 5        # ms between right and front pings (0 = v19 timing)
 
 # ================= TASK TUNING =================
-HOLD_TIME = 3.0      # s the Task Decider's flag must stay in front of the IR sensor
+BUZZER_HOLD = 3.0    # s the Task Decider holds the flag for the buzzer
+LIGHT_HOLD = 5.0     # s ... for the light
+SPIN_HOLD = 10.0     # s ... for the spin  (task = nearest of these three)
+MIN_HOLD = 2.0       # s: shorter holds are ignored (hand passing, glitch)
+MAX_HOLD = 15.0      # s: flag still there after this = spin signal, act anyway
 TASK_WAIT_S = 60     # s to wait for the flag after stopping before giving up
 IR_ACTIVE_LOW = True # IR module reads 0 when it detects
-FLAG_TASK = 1        # task run when the flag is held: 1 buzzer, 2 light, 3 spin (placeholder)
 BUZZER_ACTIVE = False    # True = active buzzer (sounds with plain power); False = needs a tone
 BUZZ_FREQ = 2000     # Hz tone for a passive buzzer
 BUZZ_TIME = 1.0      # s (placeholder for a song)
@@ -188,12 +206,14 @@ def navigate():
     left = 10.0                            # equal starting values,
     right = 10.0                           # so the robot starts straight
     end_count = 0                          # loops in a row with both end conditions
+    turn_dir = 0                           # 0 = not pivoting, 1 = left, -1 = right
     start = time.ticks_ms()
 
     while time.ticks_diff(time.ticks_ms(), start) < RUN_TIMEOUT_S * 1000:
         raw_left = read_cm(trig_l, echo_l)
         time.sleep_ms(10)                  # let left's echoes die out
         raw_right = read_cm(trig_r, echo_r)
+        time.sleep_ms(GAP_RF_MS)           # let right's echoes die out
         front = read_cm(trig_f, echo_f)    # a miss reads MAX_CM = clear ahead
 
         # End of course: BOTH must be true, for END_CONFIRM loops in a row:
@@ -216,12 +236,16 @@ def navigate():
             print(raw_left, raw_right, front, left, right)
 
         if front < FRONT_TURN_CM:
-            # Wall ahead: sharp turn towards the more open side
-            if left > right:
+            # Wall ahead: sharp turn towards the more open side,
+            # keeping the same direction until the front is clear
+            if turn_dir == 0:
+                turn_dir = 1 if left > right else -1
+            if turn_dir == 1:
                 set_motors(0, MAX_SPEED)   # stop left wheel -> turn left
             else:
                 set_motors(MAX_SPEED, 0)   # stop right wheel -> turn right
         else:
+            turn_dir = 0                   # front clear: turn finished
             # Centring: positive error = closer to the right wall, so steer left
             error = left - right
             if abs(error) <= DEADBAND:
@@ -236,25 +260,32 @@ def navigate():
 
 
 # ================= TASK DETECTION =================
-def flag_held():
-    """Wait while the flag is in front of the IR sensor. True once it has stayed
-    there for HOLD_TIME seconds; False if it is removed before that."""
+def hold_length():
+    """Wait while the flag is in front of the IR sensor; return how long it stayed (s).
+    Stops timing at MAX_HOLD so a flag that is never taken away can't hang the robot."""
     start = time.ticks_ms()
     while ir_detected():
-        if time.ticks_diff(time.ticks_ms(), start) >= HOLD_TIME * 1000:
-            return True
+        if time.ticks_diff(time.ticks_ms(), start) >= MAX_HOLD * 1000:
+            break
         time.sleep_ms(20)
-    return False
+    return time.ticks_diff(time.ticks_ms(), start) / 1000
 
 
 def detect_task():
-    """Wait up to TASK_WAIT_S for the flag to be held for HOLD_TIME, then return the
-    task to run (1 buzzer, 2 light, 3 spin), or None if no flag comes.
-    Which task: FLAG_TASK for now, until we know how the decider chooses."""
+    """Time how long the Task Decider's flag stays in front of the IR sensor and,
+    once it has gone, return the task: nearest of BUZZER_HOLD (1 buzzer),
+    LIGHT_HOLD (2 light), SPIN_HOLD (3 spin). Holds under MIN_HOLD are ignored.
+    Returns None if no flag comes within TASK_WAIT_S."""
     start = time.ticks_ms()
     while time.ticks_diff(time.ticks_ms(), start) < TASK_WAIT_S * 1000:
-        if ir_detected() and flag_held():
-            return FLAG_TASK
+        if ir_detected():
+            held = hold_length()
+            if held >= MIN_HOLD:
+                if held < (BUZZER_HOLD + LIGHT_HOLD) / 2:      # under 4 s
+                    return 1
+                if held < (LIGHT_HOLD + SPIN_HOLD) / 2:        # under 7.5 s
+                    return 2
+                return 3
         time.sleep_ms(20)
     return None
 
