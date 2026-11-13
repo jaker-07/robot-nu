@@ -1,7 +1,13 @@
 """
-main_v20a.py   GE1501 AE1 robot: corridor navigation, end detection, three tasks.
+main_v20b.py   GE1501 AE1 robot: corridor navigation, end detection, three tasks.
 
-Changes from main_v20 (v20 never stopped at the end and was a bit jittery):
+Changes from main_v20a:
+- LED strip (WS2812, 5 LEDs, GP27) replaces the plain on/off light pin:
+  green startup sequence during the start delay, task_light() lights the strip,
+  stop_all() switches it off.
+- IR sensor connected on GP22 (detection logic still to come).
+
+Changes in v20a from main_v20 (v20 never stopped at the end and was a bit jittery):
 - End check back to the v19 rule: a side counts as open if it has no echo, a
   reading at or beyond MAX_CM, OR the sensor is still busy. Past the end the open
   side alternates between "no echo" and "busy" (an HC-SR04 holds its echo line high
@@ -32,20 +38,22 @@ Wiring (as built):
   Ultrasonic L  TRIG GP16 (pin 21), ECHO GP17 (pin 22)
   Ultrasonic F  TRIG GP18 (pin 24), ECHO GP19 (pin 25)
   Ultrasonic R  TRIG GP20 (pin 26), ECHO GP21 (pin 27)
-  Task parts    LED GP27 (connected); IR OUT GP22 and buzzer GP26 planned
+  Task parts    LED strip DIN GP27 (WS2812, 5 LEDs), IR OUT GP22, buzzer GP26 (not connected yet)
 ENA/ENB jumper caps OFF. No echo dividers fitted (ECHO goes straight to the Pico).
 """
 
 from machine import Pin, PWM, time_pulse_us
 import time
+import neopixel
 
 # ================= PINS (GP numbers) =================
 L_TRIG, L_ECHO = 16, 17
 F_TRIG, F_ECHO = 18, 19
 R_TRIG, R_ECHO = 20, 21
-IR_PIN = 22          # IR module OUT (task detection) - not connected yet
+IR_PIN = 22          # IR module OUT (task detection) - connected
 BUZZER_PIN = 26      # buzzer - not connected yet
-LIGHT_PIN = 27       # LED - connected
+LIGHT_PIN = 27       # LED strip data in (WS2812) - connected
+NUM_LEDS = 5         # strip cut after LED 5
 
 # ================= NAVIGATION TUNING =================
 BASE_SPEED = 40      # % power driving straight
@@ -75,6 +83,9 @@ TASK_TEST = None     # None = use detect_task(); 1 buzzer, 2 light, 3 spin to te
 BUZZ_FREQ = 2000     # Hz
 BUZZ_TIME = 2.0      # s
 LIGHT_TIME = 3.0     # s
+LIGHT_COLOUR = (0, 120, 0)   # (red, green, blue) 0-255 for the light task
+DIM = (0, 25, 0)             # startup sequence trail
+BRIGHT = (0, 120, 0)         # startup sequence head and flashes
 BACKUP_TIME = 0.5    # s reversing away from the Task Decider before spinning
 SPIN_SPEED = 45      # % power for the spin
 SPIN_TIME = 2.0      # s for a full 360 deg - CALIBRATE on the real floor
@@ -174,14 +185,41 @@ def pivot_direction(raw_left, raw_right, left, right, last_dir):
 led = Pin(25, Pin.OUT)              # onboard LED: on while navigating
 buzzer = PWM(Pin(BUZZER_PIN))
 buzzer.duty_u16(0)
-light = Pin(LIGHT_PIN, Pin.OUT, value=0)
+strip = neopixel.NeoPixel(Pin(LIGHT_PIN), NUM_LEDS)
+
+
+def strip_fill(colour):
+    """Set every LED on the strip to one colour."""
+    for i in range(NUM_LEDS):
+        strip[i] = colour
+    strip.write()
+
+
+def startup_lights():
+    """Green loading sequence (about 2 s): sweep, two flashes, fade out."""
+    strip_fill((0, 0, 0))
+    for i in range(NUM_LEDS):           # loading bar: bright head, dim trail
+        strip[i] = BRIGHT
+        if i > 0:
+            strip[i - 1] = DIM
+        strip.write()
+        time.sleep_ms(180)
+    for _ in range(2):                  # two flashes = ready
+        strip_fill(BRIGHT)
+        time.sleep_ms(150)
+        strip_fill((0, 0, 0))
+        time.sleep_ms(150)
+    strip_fill(BRIGHT)
+    for level in range(120, -1, -8):    # fade out
+        strip_fill((0, level, 0))
+        time.sleep_ms(25)
 
 
 def stop_all():
-    """Motors, buzzer and light off."""
+    """Motors, buzzer and LED strip off."""
     set_motors(0, 0)
     buzzer.duty_u16(0)
-    light.off()
+    strip_fill((0, 0, 0))
 
 
 # ================= NAVIGATION =================
@@ -261,10 +299,10 @@ def task_buzzer():
 
 
 def task_light():
-    """Task 2: light on for LIGHT_TIME seconds."""
-    light.on()
+    """Task 2: LED strip on for LIGHT_TIME seconds."""
+    strip_fill(LIGHT_COLOUR)
     time.sleep(LIGHT_TIME)
-    light.off()
+    strip_fill((0, 0, 0))
 
 
 def task_spin():
@@ -290,7 +328,8 @@ def no_task():
 # ================= MAIN =================
 try:
     stop_all()
-    time.sleep(3)                       # time to put the robot down
+    startup_lights()                    # about 2 s of the start delay
+    time.sleep(1)                       # rest of the time to put the robot down
     led.on()
     if navigate():
         task = detect_task()
