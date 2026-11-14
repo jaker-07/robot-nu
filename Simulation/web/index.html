@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corridor twin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3ED; --ink:#2B2B2A; --muted:#8A8780; --faint:#D9D5CC;
+  --s0:#BDB9B1; --s1:#CFCBC3; --s2:#E0DCD4; --s3:#EEEBE5;
+  --accent:#C0392B; --halo:rgba(245,243,237,.88); --led:#3C9A4B;
+  --key:#ECE9E2; --key-edge:#B9B5AC; --groove:#C9C5BC; --lamp-off:#D6D2C9;
+  --ui:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){ :root{
+  --paper:#1C1C1B; --ink:#E9E6DF; --muted:#8E8A82; --faint:#3A3936;
+  --s0:#3E3D3A; --s1:#4A4945; --s2:#58564F; --s3:#2A2A28;
+  --accent:#E0533F; --halo:rgba(28,28,27,.85); --led:#5CC46E; color-scheme:dark;
+  --key:#34332F; --key-edge:#55534D; --groove:#4A4944; --lamp-off:#45443F;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"STIX Two Text","Latin Modern Roman",Georgia,serif}
+main{max-width:1040px;margin:0 auto;padding:16px 20px 60px}
+.bar{display:flex;justify-content:space-between;gap:12px;font-size:15px;color:var(--muted);min-height:1.6em;font-variant-numeric:tabular-nums}
+.bar b{color:var(--ink);font-weight:400}
+h1{font-weight:700;font-size:clamp(26px,4.6vw,40px);text-align:center;margin:16px 0 4px;letter-spacing:-.01em}
+.sub{text-align:center;color:var(--muted);font-size:16px;margin:0 0 6px}
+.verdict{text-align:center;font-size:16px;min-height:3.1em;margin:6px 0 0;line-height:1.5}
+.verdict .m{color:var(--muted)} .verdict .bad{color:var(--accent)}
+svg{display:block;width:100%;height:auto}
+.ink{stroke:var(--ink);stroke-width:1.1;stroke-linejoin:round;stroke-linecap:round}
+.lbl{font-size:12.5px;fill:var(--muted);paint-order:stroke;stroke:var(--halo);stroke-width:5px;stroke-linejoin:round;font-family:inherit}
+.lbl.k{fill:var(--ink)}
+.tk{font-size:11.5px;fill:var(--muted);font-family:inherit}
+.cap{font:9.5px var(--ui);letter-spacing:.14em;text-transform:uppercase;fill:var(--muted)}
+/* control strip */
+.ctl{display:flex;align-items:flex-start;justify-content:center;gap:clamp(16px,4vw,38px);margin:8px auto 0;padding:14px 0 10px;
+  max-width:760px;border-top:1px solid var(--faint);border-bottom:1px solid var(--faint);font-family:var(--ui)}
+.ctl .cell{display:flex;flex-direction:column;align-items:center;gap:7px}
+.cap2{font:9.5px var(--ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.key{width:34px;height:34px;border-radius:50%;border:1px solid var(--key-edge);background:var(--key);cursor:pointer;padding:0;
+  display:grid;place-items:center;box-shadow:0 1px 0 var(--key-edge);transition:transform .08s,box-shadow .08s;touch-action:manipulation}
+.key:active{transform:translateY(1px);box-shadow:0 0 0 var(--key-edge)}
+.key:focus-visible,input:focus-visible,select:focus-visible,button:focus-visible{outline:1px solid var(--muted);outline-offset:3px}
+.key .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.key .lamp{width:6px;height:6px;border-radius:50%;background:var(--lamp-off);transition:background .2s}
+.key[aria-pressed="true"] .lamp{background:var(--accent)}
+.key:disabled{opacity:.45;cursor:default}
+.cell.slide{flex:1;min-width:150px;max-width:230px;align-items:stretch}
+.slide .track{position:relative;height:34px;display:flex;align-items:center}
+.slide .ticks{position:absolute;left:8px;right:8px;top:23px;height:5px;opacity:.7;
+  background:linear-gradient(to right,var(--muted) 1px,transparent 1px) 0 0/calc((100% - 1px)/6) 100% repeat-x}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:16px;margin:0;background:transparent;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--groove);border-radius:1px}
+input[type=range]::-moz-range-track{height:2px;background:var(--groove);border-radius:1px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;margin-top:-7px;border-radius:50%;
+  background:var(--key);border:1px solid var(--ink);box-shadow:inset 0 0 0 3.5px var(--key),inset 0 0 0 8px var(--ink)}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--key);border:1px solid var(--ink);
+  box-shadow:inset 0 0 0 3.5px var(--key),inset 0 0 0 8px var(--ink)}
+.slide .row{display:flex;justify-content:space-between}
+output,.num{font:10.5px var(--ui);letter-spacing:.04em;color:var(--ink);font-variant-numeric:tabular-nums}
+.seg{display:flex;gap:12px;height:34px;align-items:center}
+.seg button,.tabs button,.txt{background:none;border:0;padding:3px 0;cursor:pointer;color:var(--muted);
+  font:9.5px var(--ui);letter-spacing:.14em;text-transform:uppercase;border-bottom:1px solid transparent}
+.seg button[aria-pressed="true"],.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.txt{color:var(--ink);border-bottom-color:var(--key-edge)} .txt:disabled{color:var(--muted);cursor:default}
+select,input[type=number],input[type=text]{font:12px var(--ui);color:var(--ink);background:transparent;border:0;border-bottom:1px solid var(--key-edge);
+  padding:3px 2px;border-radius:0;font-variant-numeric:tabular-nums}
+select{height:34px;max-width:170px}
+input[type=number]{width:64px;text-align:right}
+/* lower panels */
+.tabs{display:flex;justify-content:center;gap:clamp(14px,3.4vw,34px);margin:26px 0 14px;border-bottom:1px solid var(--faint);padding-bottom:9px}
+.panel{display:none;font-size:15px;line-height:1.5} .panel.on{display:block}
+.panel p{margin:0 0 12px} .panel .m{color:var(--muted)}
+.grid{display:grid;align-items:center;column-gap:14px;row-gap:5px}
+.g-par{grid-template-columns:max-content minmax(120px,220px) 70px max-content 1fr}
+.g-trn{grid-template-columns:max-content max-content 70px 70px 1fr}
+.g-cal{grid-template-columns:minmax(200px,1fr) 78px 34px 150px}
+.pn{font:11.5px var(--mono);color:var(--ink)} .pn.ch{color:var(--accent)}
+.note{color:var(--muted);font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.src{font:9px var(--ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.src.weak{color:var(--accent)}
+.rowbtn{display:flex;gap:22px;align-items:center;flex-wrap:wrap;margin:14px 0}
+.prog{height:2px;background:var(--groove);margin:10px 0;position:relative} .prog i{position:absolute;left:0;top:0;bottom:0;background:var(--ink);width:0}
+.strip{display:flex;flex-wrap:wrap;gap:5px;margin:12px 0}
+.sq{width:13px;height:13px;border:1px solid var(--ink);background:var(--ink);padding:0;cursor:pointer}
+.sq.touch{background:transparent} .sq.fail{background:var(--accent);border-color:var(--accent)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{font:9.5px var(--ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);text-align:left;font-weight:400;padding:4px 10px 6px 0;border-bottom:1px solid var(--faint)}
+td{padding:5px 10px 5px 0;border-bottom:1px solid var(--faint);font-variant-numeric:tabular-nums;vertical-align:top}
+td.r,th.r{text-align:right}
+.msg{color:var(--muted);font-style:italic;min-height:1.5em}
+.log{max-height:560px;overflow:auto;margin:0 0 6px}
+.log .who{font:9.5px var(--ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:14px 0 3px}
+.log .say{white-space:pre-wrap;margin:0 0 6px}
+.log .step{font:11px var(--mono);color:var(--muted);margin:2px 0;overflow-wrap:anywhere}
+.log .bad{color:var(--accent)}
+textarea{width:100%;font:15px "STIX Two Text",Georgia,serif;color:var(--ink);background:transparent;border:1px solid var(--faint);padding:8px 10px;resize:vertical}
+h3{font:9.5px var(--ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:400;margin:20px 0 8px}
+@media (max-width:700px){ .g-par{grid-template-columns:max-content 1fr 64px} .g-par .note,.g-par .file{display:none}
+  .g-trn{grid-template-columns:max-content max-content 60px 60px} .g-trn .note{display:none} .ctl{flex-wrap:wrap} }
+</style>
+</head>
+<body>
+<main>
+  <div class="bar"><span id="rT">&nbsp;</span><span id="rD">&nbsp;</span></div>
+  <h1>Corridor twin</h1>
+  <p class="sub" id="sub">&nbsp;</p>
+  <svg id="scene" viewBox="0 0 891 384" role="img" aria-label="Top view of the course with the robot driving through it">
+    <g id="gStatic"></g><g id="gPaths"></g><g id="gDyn"></g>
+  </svg>
+  <p class="verdict" id="verdict">&nbsp;</p>
+
+  <div class="ctl" role="group" aria-label="Playback">
+    <div class="cell"><button class="key" id="kPlay" aria-pressed="false" aria-label="Play or pause"><span class="lamp"></span></button><span class="cap2">Play</span></div>
+    <div class="cell slide">
+      <div class="track"><div class="ticks" aria-hidden="true"></div>
+        <input id="inSpeed" type="range" min="0" max="6" step="1" value="3" aria-label="Playback speed"></div>
+      <div class="row"><span class="cap2">Speed</span><output id="outSpeed" for="inSpeed">2×</output></div>
+    </div>
+    <div class="cell"><button class="key" id="kRun" aria-label="Run a new attempt"><span class="dot"></span></button><span class="cap2">New run</span></div>
+    <div class="cell"><div class="seg" id="segTask" role="group" aria-label="Task signal">
+      <button data-v="buzzer" aria-pressed="false">Buzzer</button><button data-v="light" aria-pressed="false">Light</button><button data-v="spin" aria-pressed="true">Spin</button></div><span class="cap2">Signal</span></div>
+    <div class="cell"><button class="key" id="kVary" aria-pressed="false" aria-label="Vary start placement, battery, motors and course"><span class="lamp"></span></button><span class="cap2">Vary</span></div>
+    <div class="cell"><select id="selFw" aria-label="Robot program"></select><span class="cap2">Program</span></div>
+  </div>
+
+  <svg id="plot" viewBox="0 0 891 236" role="img" aria-label="Sensor readings and motor power over time. Click to move through the run.">
+    <g id="pStatic"></g><line id="pCur" x1="0" x2="0" y1="14" y2="214" stroke="var(--accent)" stroke-width="1.2"/>
+  </svg>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" data-t="par" aria-selected="true">Constants</button>
+    <button role="tab" data-t="tri" aria-selected="false">Trials</button>
+    <button role="tab" data-t="trn" aria-selected="false">Training</button>
+    <button role="tab" data-t="agt" aria-selected="false">Agent</button>
+    <button role="tab" data-t="his" aria-selected="false">History</button>
+    <button role="tab" data-t="cal" aria-selected="false">Calibration</button>
+  </div>
+
+  <section class="panel on" id="p-par">
+    <p class="m">The constants found in the program. Change any, then press New run. The file itself is never edited.</p>
+    <div class="grid g-par" id="parGrid"></div>
+    <div class="rowbtn"><button class="txt" id="bReset">Back to file values</button><button class="txt" id="bExport">Export as candidate file</button><span class="msg" id="parMsg"></span></div>
+  </section>
+
+  <section class="panel" id="p-tri">
+    <p class="m">Repeats the run with the start placement, battery level, motor mismatch, sensor noise and wall positions drawn afresh each time, cycling through the three task signals.</p>
+    <div class="rowbtn"><label class="cap2">Attempts <select id="selN"><option>12</option><option selected>24</option><option>48</option><option>96</option></select></label>
+      <button class="txt" id="bTrials">Run trials</button><span class="msg" id="triMsg"></span></div>
+    <div class="prog"><i id="triProg"></i></div>
+    <p id="triSum"></p>
+    <div class="strip" id="triStrip"></div>
+  </section>
+
+  <section class="panel" id="p-trn">
+    <p class="m">Searches the ticked constants for values that score higher across varied attempts, then compares the best set with the starting values on fresh attempts neither has seen. A set is recommended only if it wins there.</p>
+    <div class="grid g-trn" id="trnGrid"></div>
+    <div class="rowbtn">
+      <label class="cap2">Rounds <input type="number" id="nGens" value="8" min="1" max="40"></label>
+      <label class="cap2">Candidates <input type="number" id="nPop" value="12" min="4" max="40"></label>
+      <label class="cap2">Attempts each <input type="number" id="nSeeds" value="6" min="2" max="30"></label>
+      <label class="cap2">Points per second <input type="number" id="nTime" value="0.1" min="0" max="2" step="0.05"></label>
+    </div>
+    <div class="rowbtn"><button class="txt" id="bTrain">Start training</button><button class="txt" id="bStop" disabled>Stop</button><span class="msg" id="trnMsg"></span></div>
+    <div class="prog"><i id="trnProg"></i></div>
+    <svg id="trnPlot" viewBox="0 0 891 170" aria-hidden="true"></svg>
+    <div id="trnRes"></div>
+  </section>
+
+  <section class="panel" id="p-agt">
+    <p class="m" id="agtStatus">&nbsp;</p>
+    <div class="log" id="agtLog"></div>
+    <div class="rowbtn" id="agtIdeas">
+      <button class="txt">Where and why does this program touch the walls?</button>
+      <button class="txt">Find constants that remove wall contact without adding more than 2 s</button>
+      <button class="txt">Is the end stop robust? Test STOP_CM and END_CONFIRM</button>
+    </div>
+    <textarea id="agtIn" rows="3" placeholder="Ask about the program, or set the agent a task" aria-label="Message to the agent"></textarea>
+    <div class="rowbtn"><button class="txt" id="bSend">Send</button><button class="txt" id="bAgtStop" disabled>Stop</button><button class="txt" id="bAgtNew">New conversation</button>
+      <label class="cap2">Model <select id="selModel"></select></label><span class="msg" id="agtMsg"></span></div>
+  </section>
+
+  <section class="panel" id="p-his">
+    <div id="hisBody"></div>
+    <div class="rowbtn"><button class="txt" id="bHisClear">Clear history</button></div>
+  </section>
+
+  <section class="panel" id="p-cal">
+    <p class="m">Every physical number in the twin and where it came from. Replace an estimate with a measurement and the twin re-runs with it. Sources marked in red are guesses.</p>
+    <div id="calBody"></div>
+    <div class="rowbtn"><button class="txt" id="bCalSave">Save changes</button><button class="txt" id="bCalReset">Restore all defaults</button><span class="msg" id="calMsg"></span></div>
+  </section>
+</main>
+
+<script>
+/* ---------- 1. helpers ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(path, body){
+  const r = await fetch(path, body === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+const f1 = v => v == null ? '–' : (+v).toFixed(1);
+const pct = v => Math.round(100 * v) + ' %';
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
+const PHASE = ['waiting to start', 'driving', 'stopped, waiting for the signal', 'task', 'finished'];
+
+/* ---------- 2. state ---------- */
+const S = { info:null, fw:null, tun:[], over:{}, run:null, t:0, playing:false, seed:1, task:'spin', vary:false,
+            trials:null, trained:null, busy:false };
+
+/* ---------- 3. view transform: world cm -> scene px ---------- */
+const K = 3, PAD = 12; let X0 = -12, Y1 = 100;
+function fit(track){
+  const pts = [...track.outer, ...track.inner, ...track.decider];
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  X0 = Math.min(...xs) - PAD - 14; Y1 = Math.max(...ys) + PAD;
+  const w = (Math.max(...xs) + PAD - X0) * K, h = (Y1 - (Math.min(...ys) - PAD - 6)) * K;
+  $('scene').setAttribute('viewBox', `0 0 ${w.toFixed(0)} ${h.toFixed(0)}`);
+}
+const px = (x, y) => [(x - X0) * K, (Y1 - y) * K];
+const P = (x, y) => { const p = px(x, y); return p[0].toFixed(1) + ',' + p[1].toFixed(1); };
+const poly = pts => pts.map(p => P(p[0], p[1])).join(' ');
+
+/* ---------- 4. static scene: the course ---------- */
+function drawStatic(track){
+  fit(track);
+  const wall = 2 * S.info.wall_r * K;
+  const floor = [...track.outer, ...track.inner.slice().reverse()];
+  let s = `<polygon points="${poly(floor)}" fill="var(--s3)"/>`;
+  s += `<polyline points="${poly(track.centre)}" fill="none" stroke="var(--faint)" stroke-width="1" stroke-dasharray="2 5"/>`;
+  s += `<line x1="${px(...track.outer[0])[0]}" y1="${px(...track.outer[0])[1]}" x2="${px(...track.inner[0])[0]}" y2="${px(...track.inner[0])[1]}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="5 4"/>`;
+  for (const w of [track.outer, track.inner])
+    s += `<polyline points="${poly(w)}" fill="none" stroke="var(--ink)" stroke-width="${Math.max(2, wall).toFixed(1)}" stroke-linejoin="round" stroke-linecap="round"/>`;
+  s += `<polygon class="ink" points="${poly(track.decider)}" fill="var(--s1)"/>`;
+  const dc = track.decider.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4], [0, 0]);
+  const dp = px(dc[0], dc[1] + 13);
+  s += `<text class="lbl k" x="${dp[0]}" y="${dp[1]}" text-anchor="middle">Task Decider</text>`;
+  const sp = px((track.outer[0][0] + track.inner[0][0]) / 2, track.outer[0][1] - 6);
+  s += `<text class="lbl" x="${sp[0]}" y="${sp[1]}" text-anchor="middle">start</text>`;
+  // width of each leg, written outside the outer wall
+  for (let i = 0; i < track.widths.length; i++){
+    const a = track.outer[i], b = track.outer[i + 1], c = track.inner[i], d = track.inner[i + 1];
+    const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, ix = (c[0] + d[0]) / 2, iy = (c[1] + d[1]) / 2;
+    const L = Math.hypot(mx - ix, my - iy) || 1, ox = (mx - ix) / L, oy = (my - iy) / L;
+    const q = px(mx + ox * 6, my + oy * 6), anchor = ox < -0.4 ? 'end' : ox > 0.4 ? 'start' : 'middle';
+    s += `<text class="lbl" x="${q[0].toFixed(1)}" y="${(q[1] + (oy > 0.4 ? -2 : oy < -0.4 ? 12 : 4)).toFixed(1)}" text-anchor="${anchor}">${track.widths[i].toFixed(1)} cm</text>`;
+  }
+  const b0 = px(X0 + 8, Y1 - (($('scene').viewBox.baseVal.height) / K) + 7);
+  s += `<line class="ink" x1="${b0[0]}" y1="${b0[1]}" x2="${b0[0] + 50 * K}" y2="${b0[1]}"/><line class="ink" x1="${b0[0]}" y1="${b0[1] - 3}" x2="${b0[0]}" y2="${b0[1] + 3}"/><line class="ink" x1="${b0[0] + 50 * K}" y1="${b0[1] - 3}" x2="${b0[0] + 50 * K}" y2="${b0[1] + 3}"/>`;
+  s += `<text class="tk" x="${b0[0] + 25 * K}" y="${b0[1] - 6}" text-anchor="middle">50 cm</text>`;
+  $('gStatic').innerHTML = s;
+  S.trackDrawn = track;
+}
+
+/* ---------- 5. dynamic scene: robot, beams, trail ---------- */
+function poseAt(t){
+  const tr = S.run.trace, n = tr.t.length;
+  let f = t / 0.02 - 1; if (f < 0) f = 0; if (f > n - 1) f = n - 1;
+  const i = Math.floor(f), j = Math.min(n - 1, i + 1), a = f - i;
+  return { i, x: tr.x[i] + (tr.x[j] - tr.x[i]) * a, y: tr.y[i] + (tr.y[j] - tr.y[i]) * a, th: tr.th[i] + (tr.th[j] - tr.th[i]) * a };
+}
+function drawDyn(){
+  if (!S.run){ $('gDyn').innerHTML = ''; return; }
+  const R = S.info.robot, tr = S.run.trace, p = poseAt(S.t), i = p.i;
+  const c = Math.cos(p.th), s = Math.sin(p.th);
+  const W = (lx, ly) => [p.x + lx * c - ly * s, p.y + lx * s + ly * c];
+  const quad = (cx, cy, hx, hy, a) => { const ca = Math.cos(a), sa = Math.sin(a);
+    return [[-hx,-hy],[hx,-hy],[hx,hy],[-hx,hy]].map(q => W(cx + q[0] * ca - q[1] * sa, cy + q[0] * sa + q[1] * ca)); };
+  let o = '';
+  // trail
+  const pts = []; for (let k = 0; k <= i; k += 2) pts.push(P(tr.x[k], tr.y[k])); pts.push(P(p.x, p.y));
+  o += `<polyline points="${pts.join(' ')}" fill="none" stroke="var(--muted)" stroke-width="1.2" stroke-linejoin="round"/>`;
+  for (const cst of S.run.contact_list) if (cst.t <= S.t){ const q = px(cst.x, cst.y);
+    o += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="${cst.speed > 8 || cst.dur > 0.5 ? 5 : 3.2}" fill="none" stroke="var(--accent)" stroke-width="1.6"/>`; }
+  // Task Decider flag
+  if (tr.fl[i]){ const d = S.trackDrawn.decider, m = [(d[0][0] + d[1][0]) / 2, (d[0][1] + d[1][1]) / 2];
+    const ux = d[0][0] - d[3][0], uy = d[0][1] - d[3][1], L = Math.hypot(ux, uy), e = [m[0] + ux / L * 7, m[1] + uy / L * 7];
+    o += `<line x1="${px(...m)[0]}" y1="${px(...m)[1]}" x2="${px(...e)[0]}" y2="${px(...e)[1]}" stroke="var(--accent)" stroke-width="5"/>`; }
+  // sonar beams, drawn to the distance the program was told
+  const rd = {L: tr.dl[i], F: tr.df[i], R: tr.dr[i]};
+  if (tr.ph[i] >= 1) for (const n of ['L', 'F', 'R']){
+    const [sx, sy, ang] = R.sensors[n], a = p.th + ang * Math.PI / 180, o0 = W(sx, sy), d = rd[n];
+    const len = d < 0 ? 9 : Math.min(d, 90), e = [o0[0] + len * Math.cos(a), o0[1] + len * Math.sin(a)];
+    o += `<line x1="${px(...o0)[0].toFixed(1)}" y1="${px(...o0)[1].toFixed(1)}" x2="${px(...e)[0].toFixed(1)}" y2="${px(...e)[1].toFixed(1)}" stroke="var(--ink)" stroke-width=".9" ${d < 0 ? 'stroke-dasharray="2 3" opacity=".5"' : 'opacity=".75"'}/>`;
+    if (d >= 0 && d <= 90) o += `<circle cx="${px(...e)[0].toFixed(1)}" cy="${px(...e)[1].toFixed(1)}" r="2" fill="var(--ink)"/>`;
+  }
+  // wheels, body, sensors
+  const ht = R.wheel_track / 2;
+  for (const sgn of [1, -1]) o += `<polygon class="ink" points="${poly(quad(0, sgn * ht, 3.25, 1.3, 0))}" fill="var(--ink)"/>`;
+  o += `<polygon class="ink" points="${poly(R.hull.map(h => W(h[0], h[1])))}" fill="var(--s2)" fill-opacity=".86" ${tr.c[i] ? 'style="stroke:var(--accent);stroke-width:2"' : ''}/>`;
+  o += `<polygon class="ink" points="${poly(quad(-1.5, 0, 8.2, 2.7, 0))}" fill="var(--s3)"/>`;            // breadboard
+  for (const n of ['L', 'F', 'R']){ const [sx, sy, ang] = R.sensors[n];
+    o += `<polygon class="ink" points="${poly(quad(sx, sy, 0.6, 2.2, ang * Math.PI / 180))}" fill="var(--s0)"/>`; }
+  const led = tr.led[i], lit = led > 0;
+  for (let k = 0; k < 5; k++){ const q = px(...W(-8.6, (k - 2) * 1.5));
+    o += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="1.8" fill="${lit ? 'var(--led)' : 'var(--s0)'}" stroke="var(--ink)" stroke-width=".5"/>`; }
+  const mq = px(...W(R.ir_x, 0)); o += `<circle cx="${mq[0].toFixed(1)}" cy="${mq[1].toFixed(1)}" r="2.6" fill="var(--ink)"/>`;
+  if (tr.bz[i]){ const b = px(...W(-4, 0)); for (const r of [14, 20, 26])
+    o += `<circle cx="${b[0].toFixed(1)}" cy="${b[1].toFixed(1)}" r="${r}" fill="none" stroke="var(--accent)" stroke-width="1" opacity="${(0.9 - r / 40).toFixed(2)}"/>`; }
+  $('gDyn').innerHTML = o;
+  // readouts
+  const v = i > 0 ? Math.hypot(tr.x[i] - tr.x[i - 1], tr.y[i] - tr.y[i - 1]) / 0.02 : 0;
+  const end = S.t >= S.T - 1e-6;
+  $('rT').innerHTML = `<b>t = ${S.t.toFixed(2)} s</b> · ${end ? PHASE[4] : PHASE[tr.ph[i]]} · ${v.toFixed(0)} cm/s`;
+  const sh = d => d < 0 ? 'none' : d.toFixed(1);
+  $('rD').innerHTML = `left <b>${sh(rd.L)}</b> · front <b>${sh(rd.F)}</b> · right <b>${sh(rd.R)}</b> cm`;
+  $('pCur').setAttribute('x1', PX0 + PW * S.t / S.T); $('pCur').setAttribute('x2', PX0 + PW * S.t / S.T);
+}
+function drawPaths(){
+  if (!S.trials){ $('gPaths').innerHTML = ''; return; }
+  $('gPaths').innerHTML = S.trials.runs.map(r =>
+    `<polyline points="${poly(r.path)}" fill="none" stroke="${r.success ? 'var(--ink)' : 'var(--accent)'}" stroke-width="1" opacity="${r.success ? .13 : .55}"/>`).join('');
+}
+
+/* ---------- 6. plot: what the program was told, and what it commanded ---------- */
+const PX0 = 56, PW = 800;
+function drawPlot(){
+  const g = $('pStatic'); if (!S.run){ g.innerHTML = ''; return; }
+  const tr = S.run.trace, n = tr.t.length, T = S.T;
+  const X = t => PX0 + PW * t / T, yd = d => 110 - 92 * Math.min(70, d < 0 ? 70 : d) / 70, yu = u => 180 - 30 * Math.max(-60, Math.min(60, u)) / 60;
+  const line = (arr, y, extra) => { const p = []; for (let k = 0; k < n; k++) p.push(X(tr.t[k]).toFixed(1) + ',' + y(arr[k]).toFixed(1));
+    return `<polyline points="${p.join(' ')}" fill="none" ${extra}/>`; };
+  let s = '';
+  for (const e of S.run.events){ const lab = {go:'go', stop:'stop', flag_on:'signal', flag_off:'signal ends'}[e.type]; if (!lab) continue;
+    s += `<line x1="${X(e.t)}" x2="${X(e.t)}" y1="14" y2="214" stroke="var(--faint)" stroke-width="1"/><text class="tk" x="${X(e.t) + 3}" y="127">${lab}</text>`; }
+  s += `<line class="ink" x1="${PX0}" y1="110" x2="${PX0 + PW}" y2="110"/><line class="ink" x1="${PX0}" y1="18" x2="${PX0}" y2="110"/>`;
+  s += `<line x1="${PX0}" y1="180" x2="${PX0 + PW}" y2="180" stroke="var(--faint)"/><line class="ink" x1="${PX0}" y1="150" x2="${PX0}" y2="210"/>`;
+  for (const d of [0, 35, 70]) s += `<text class="tk" x="${PX0 - 6}" y="${yd(d) + 4}" text-anchor="end">${d === 70 ? '70+' : d}</text>`;
+  for (const u of [-60, 0, 60]) s += `<text class="tk" x="${PX0 - 6}" y="${yu(u) + 4}" text-anchor="end">${u}</text>`;
+  for (let t = 0; t <= T; t += 5) s += `<line class="ink" x1="${X(t)}" y1="210" x2="${X(t)}" y2="214"/><text class="tk" x="${X(t)}" y="229" text-anchor="middle">${t}</text>`;
+  s += `<text class="tk" x="${PX0 + PW + 8}" y="229">s</text>`;
+  s += line(tr.df, yd, 'stroke="var(--muted)" stroke-width="1"') + line(tr.dl, yd, 'stroke="var(--ink)" stroke-width="1.3"') + line(tr.dr, yd, 'stroke="var(--ink)" stroke-width="1.3" stroke-dasharray="4 3"');
+  s += line(tr.ul, yu, 'stroke="var(--ink)" stroke-width="1.3"') + line(tr.ur, yu, 'stroke="var(--ink)" stroke-width="1.3" stroke-dasharray="4 3"');
+  const key = (x, y, lab, st) => `<line x1="${x}" y1="${y}" x2="${x + 22}" y2="${y}" ${st}/><text class="tk" x="${x + 27}" y="${y + 4}">${lab}</text>`;
+  s += `<text class="cap" x="${PX0 + 8}" y="12">Sensor readings, cm</text>` + key(PX0 + 190, 9, 'left', 'stroke="var(--ink)" stroke-width="1.3"') + key(PX0 + 250, 9, 'right', 'stroke="var(--ink)" stroke-width="1.3" stroke-dasharray="4 3"') + key(PX0 + 316, 9, 'front', 'stroke="var(--muted)" stroke-width="1"');
+  s += `<text class="cap" x="${PX0 + 8}" y="146">Motor power, %</text>`;
+  g.innerHTML = s;
+}
+function scrub(ev){
+  if (!S.run) return; const r = $('plot').getBoundingClientRect();
+  const x = (ev.clientX - r.left) / r.width * 891; S.t = Math.max(0, Math.min(S.T, (x - PX0) / PW * S.T)); setPlay(false); drawDyn();
+}
+let dragging = false;
+$('plot').addEventListener('pointerdown', e => { dragging = true; $('plot').setPointerCapture(e.pointerId); scrub(e); });
+$('plot').addEventListener('pointermove', e => { if (dragging) scrub(e); });
+for (const n of ['pointerup', 'pointercancel', 'lostpointercapture']) $('plot').addEventListener(n, () => dragging = false);
+
+/* ---------- 7. running and playback ---------- */
+function verdict(r){
+  const ok = r.success, bits = [];
+  let h = `<span class="${ok ? '' : 'bad'}">${esc(r.outcome_text)}.</span>`;
+  if (r.nav_time != null) bits.push(`${r.nav_time.toFixed(1)} s driving`);
+  bits.push(r.contacts ? `${r.contacts} wall contact${r.contacts > 1 ? 's' : ''}${r.hard_contacts ? ' (' + r.hard_contacts + ' hard)' : ''}` : 'no wall contact');
+  if (r.stop_gap != null && r.reached) bits.push(`stopped ${r.stop_gap.toFixed(1)} cm from the Decider`);
+  if (r.performed.includes('spin')) bits.push(`turned ${Math.abs(r.spin_deg).toFixed(0)}°`);
+  bits.push(`score ${r.score.toFixed(0)} / 60`);
+  if (r.error) bits.unshift(esc(r.error));
+  return h + `<br><span class="m">${bits.join(' · ')}</span>`;
+}
+async function runOnce(seed, task, vary){
+  if (S.busy) return; S.busy = true; $('kRun').disabled = true;
+  try {
+    const r = await api('/api/run', {fw: S.fw, overrides: S.over, seed, task, vary});
+    S.run = r; S.T = r.trace.t[r.trace.t.length - 1]; S.t = 0; S.seed = seed;
+    if (JSON.stringify(r.track) !== JSON.stringify(S.trackDrawn)) drawStatic(r.track);
+    $('verdict').innerHTML = verdict(r);
+    drawPlot(); setPlay(true);
+  } catch (e){ $('verdict').innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
+  S.busy = false; $('kRun').disabled = false;
+}
+function setPlay(on){ S.playing = on; $('kPlay').setAttribute('aria-pressed', String(on)); }
+let last = 0;
+function frame(now){
+  const dt = last ? Math.min((now - last) / 1000, 0.05) : 0; last = now;
+  if (S.run && S.playing){
+    S.t += dt * SPEEDS[+$('inSpeed').value];
+    if (S.t >= S.T){ S.t = S.T; setPlay(false); }
+    drawDyn();
+  }
+  requestAnimationFrame(frame);
+}
+$('kPlay').onclick = () => { if (!S.run) return; if (!S.playing && S.t >= S.T) S.t = 0; setPlay(!S.playing); };
+$('kRun').onclick = () => runOnce(S.seed + 1, S.task, S.vary);
+$('kVary').onclick = () => { S.vary = !S.vary; $('kVary').setAttribute('aria-pressed', String(S.vary)); };
+$('inSpeed').oninput = () => { $('outSpeed').textContent = SPEEDS[+$('inSpeed').value] + '×'; };
+$('segTask').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.task = b.dataset.v;
+  for (const x of $('segTask').children) x.setAttribute('aria-pressed', String(x === b)); };
+document.addEventListener('keydown', e => { if (e.code === 'Space' && !/INPUT|SELECT|BUTTON|TEXTAREA/.test(e.target.tagName)){ e.preventDefault(); $('kPlay').click(); } });
+
+/* ---------- 8. tabs ---------- */
+document.querySelector('.tabs').onclick = e => { const b = e.target.closest('button'); if (!b) return;
+  for (const x of document.querySelectorAll('.tabs button')) x.setAttribute('aria-selected', String(x === b));
+  for (const p of document.querySelectorAll('.panel')) p.classList.toggle('on', p.id === 'p-' + b.dataset.t);
+  if (b.dataset.t === 'his') loadHistory(); if (b.dataset.t === 'agt') agentStatus(); };
+
+/* ---------- 9. constants ---------- */
+const stepOf = t => t.is_int ? 1 : ((t.hi - t.lo) > 5 ? 0.1 : (t.hi - t.lo) > 0.5 ? 0.05 : 0.01);
+const show = (v, t) => t.is_int ? String(Math.round(v)) : String(+(+v).toFixed(3));
+function buildParams(){
+  let h = '';
+  for (const t of S.tun){
+    const v = t.name in S.over ? S.over[t.name] : t.value;
+    h += `<span class="pn${t.name in S.over ? ' ch' : ''}" id="pn-${t.name}">${t.name}</span>` +
+      `<input type="range" data-n="${t.name}" min="${t.lo}" max="${t.hi}" step="${stepOf(t)}" value="${v}" aria-label="${t.name}">` +
+      `<input type="number" data-n="${t.name}" step="${stepOf(t)}" value="${show(v, t)}" aria-label="${t.name} value">` +
+      `<span class="src file">file ${show(t.value, t)}</span><span class="note" title="${esc(t.comment)}">${esc(t.comment)}</span>`;
+  }
+  $('parGrid').innerHTML = h;
+}
+$('parGrid').oninput = e => { const n = e.target.dataset.n; if (!n) return;
+  const t = S.tun.find(x => x.name === n), v = +e.target.value; if (!isFinite(v)) return;
+  if (Math.abs(v - t.value) < 1e-9) delete S.over[n]; else S.over[n] = t.is_int ? Math.round(v) : v;
+  for (const el of $('parGrid').querySelectorAll(`[data-n="${n}"]`)) if (el !== e.target) el.value = show(v, t);
+  $('pn-' + n).classList.toggle('ch', n in S.over); S.trials = null; drawPaths(); };
+$('bReset').onclick = () => { S.over = {}; buildParams(); $('parMsg').textContent = ''; };
+$('bExport').onclick = async () => { try { const r = await api('/api/export', {fw: S.fw, overrides: S.over});
+    $('parMsg').textContent = `Saved ${r.file}  (${r.changed})`; await loadInfo(true); }
+  catch (e){ $('parMsg').textContent = e.message; } };
+
+/* ---------- 10. jobs ---------- */
+async function follow(job, onTick){
+  for (;;){
+    const j = await api('/api/job?id=' + job); onTick(j);
+    if (j.status !== 'running') return j;
+    await new Promise(r => setTimeout(r, 400));
+  }
+}
+
+/* ---------- 11. trials ---------- */
+function summaryLine(s){
+  return `<b>${pct(s.success)}</b> fully successful · <b>${pct(s.clean)}</b> with no wall contact · ${f1(s.nav_time)} s driving · ` +
+    `${s.contacts.toFixed(2)} contacts per run (${s.hard_contacts.toFixed(2)} hard) · score <b>${s.score.toFixed(1)}</b> ± ${s.score_sd.toFixed(1)} of 60`;
+}
+function showTrials(res){
+  S.trials = res; drawPaths();
+  $('triSum').innerHTML = `${res.summary.n} attempts: ` + summaryLine(res.summary);
+  $('triStrip').innerHTML = res.runs.map((r, k) =>
+    `<button class="sq ${r.success ? (r.contacts ? 'touch' : '') : 'fail'}" data-k="${k}" title="${esc('#' + (k + 1) + ' ' + r.task + ': ' + r.outcome_text + ', ' + r.contacts + ' contact(s), score ' + r.score)}" aria-label="Replay attempt ${k + 1}"></button>`).join('');
+  $('triMsg').textContent = 'Filled = clean, hollow = touched a wall, red = failed. Click one to replay it.';
+}
+$('bTrials').onclick = async () => {
+  $('bTrials').disabled = true; $('triMsg').textContent = 'Running…'; $('triProg').style.width = '0';
+  try {
+    const {job} = await api('/api/trials', {fw: S.fw, overrides: S.over, n: +$('selN').value});
+    const j = await follow(job, j => $('triProg').style.width = (100 * j.progress) + '%');
+    if (j.error) throw new Error(j.error);
+    showTrials(j.result);
+  } catch (e){ $('triMsg').textContent = e.message; }
+  $('bTrials').disabled = false;
+};
+$('triStrip').onclick = e => { const b = e.target.closest('.sq'); if (!b || !S.trials) return;
+  const r = S.trials.runs[+b.dataset.k]; runOnce(r.seed, r.task, true); window.scrollTo({top: 0, behavior: 'smooth'}); };
+
+/* ---------- 12. training ---------- */
+function buildTrain(){
+  let h = '';
+  for (const t of S.tun){
+    const on = S.info.default_train.includes(t.name);
+    h += `<input type="checkbox" data-n="${t.name}" ${on ? 'checked' : ''} aria-label="Train ${t.name}"><span class="pn">${t.name}</span>` +
+      `<input type="number" data-lo="${t.name}" step="${stepOf(t)}" value="${show(t.lo, t)}" aria-label="${t.name} lowest">` +
+      `<input type="number" data-hi="${t.name}" step="${stepOf(t)}" value="${show(t.hi, t)}" aria-label="${t.name} highest">` +
+      `<span class="note">now ${show(t.name in S.over ? S.over[t.name] : t.value, t)} · ${esc(t.comment)}</span>`;
+  }
+  $('trnGrid').innerHTML = h;
+}
+function drawTrainPlot(hist){
+  const el = $('trnPlot'); if (!hist || !hist.length){ el.innerHTML = ''; return; }
+  const vals = hist.flatMap(h => [h.best, h.mean]).concat(hist[0].start ?? []);
+  const lo = Math.min(...vals) - 2, hi = Math.max(60, ...vals), n = Math.max(2, +$('nGens').value);
+  const X = g => 56 + 780 * (g - 1) / (n - 1), Y = v => 140 - 118 * (v - lo) / (hi - lo);
+  let s = `<line class="ink" x1="56" y1="140" x2="836" y2="140"/><line class="ink" x1="56" y1="16" x2="56" y2="140"/>`;
+  s += `<text class="cap" x="64" y="12">Score less spread, by round</text>`;
+  for (const v of [lo, hi]) s += `<text class="tk" x="50" y="${Y(v) + 4}" text-anchor="end">${v.toFixed(0)}</text>`;
+  if (hist[0].start != null) s += `<line x1="56" x2="836" y1="${Y(hist[0].start)}" y2="${Y(hist[0].start)}" stroke="var(--muted)" stroke-dasharray="3 4"/><text class="tk" x="64" y="${Y(hist[0].start) - 5}">starting values</text>`;
+  s += `<polyline points="${hist.map(h => X(h.gen) + ',' + Y(h.mean)).join(' ')}" fill="none" stroke="var(--muted)" stroke-width="1"/>`;
+  s += `<polyline points="${hist.map(h => X(h.gen) + ',' + Y(h.best)).join(' ')}" fill="none" stroke="var(--ink)" stroke-width="1.8"/>`;
+  for (const h of hist) s += `<circle cx="${X(h.gen)}" cy="${Y(h.best)}" r="3" fill="var(--ink)"/><text class="tk" x="${X(h.gen)}" y="158" text-anchor="middle">${h.gen}</text>`;
+  const l = hist[hist.length - 1]; s += `<text class="tk" x="${X(l.gen) + 8}" y="${Y(l.best) - 6}">best</text><text class="tk" x="${X(l.gen) + 8}" y="${Y(l.mean) + 12}">average</text>`;
+  el.innerHTML = s;
+}
+function showTrained(res){
+  S.trained = res;
+  const by = Object.fromEntries(S.tun.map(t => [t.name, t]));
+  const rows = Object.entries(res.changed).map(([n, [a, b]]) => `<tr><td class="pn">${n}</td><td class="r">${show(a, by[n])}</td><td class="r"><b>${show(b, by[n])}</b></td><td class="note">${esc(by[n].comment)}</td></tr>`).join('');
+  const cmp = (lab, f) => `<tr><td>${lab}</td><td class="r">${f(res.before)}</td><td class="r"><b>${f(res.after)}</b></td></tr>`;
+  $('trnRes').innerHTML =
+    `<p>${res.accepted ? `<b>Recommended.</b> On ${res.validation_n} fresh attempts the trained set scored ${res.gain.toFixed(1)} higher than the starting values.`
+                      : `<span style="color:var(--accent)">Not recommended.</span> On ${res.validation_n} fresh attempts the trained set ${res.after.success < res.before.success ? `succeeded less often (${pct(res.after.success)} against ${pct(res.before.success)})` : `did not score reliably higher (difference ${res.gain.toFixed(1)})`}. Train for more rounds, or with more attempts each.`}</p>` +
+    `<h3>On fresh attempts</h3><table><tr><th></th><th class="r">Start</th><th class="r">Trained</th></tr>` +
+    cmp('Fully successful', a => pct(a.success)) + cmp('No wall contact', a => pct(a.clean)) + cmp('Contacts per run', a => a.contacts.toFixed(2)) +
+    cmp('Driving time, s', a => f1(a.nav_time)) + cmp('Spin error, °', a => f1(a.spin_err)) + cmp('Score of 60', a => a.score.toFixed(1) + ' ± ' + a.score_sd.toFixed(1)) + `</table>` +
+    `<h3>Constants changed</h3>` + (rows ? `<table><tr><th>Constant</th><th class="r">Start</th><th class="r">Trained</th><th></th></tr>${rows}</table>` : `<p class="m">None.</p>`) +
+    `<div class="rowbtn"><button class="txt" id="bLoad">Load into the twin and run</button><button class="txt" id="bExport2">Export as candidate file</button><span class="msg" id="trnMsg2"></span></div>`;
+  $('bLoad').onclick = () => { S.over = {...res.best}; buildParams(); S.trials = null; drawPaths(); runOnce(S.seed + 1, S.task, S.vary); window.scrollTo({top: 0, behavior: 'smooth'}); };
+  $('bExport2').onclick = async () => { try { const r = await api('/api/export', {fw: S.fw, overrides: res.best}); $('trnMsg2').textContent = `Saved ${r.file}`; await loadInfo(true); } catch (e){ $('trnMsg2').textContent = e.message; } };
+}
+let trainJob = null;
+$('bTrain').onclick = async () => {
+  const names = [...$('trnGrid').querySelectorAll('input[type=checkbox]:checked')].map(c => c.dataset.n), bounds = {};
+  for (const n of names) bounds[n] = [+$('trnGrid').querySelector(`[data-lo="${n}"]`).value, +$('trnGrid').querySelector(`[data-hi="${n}"]`).value];
+  if (!names.length){ $('trnMsg').textContent = 'Tick at least one constant.'; return; }
+  $('bTrain').disabled = true; $('bStop').disabled = false; $('trnRes').innerHTML = ''; drawTrainPlot(null); $('trnProg').style.width = '0';
+  const g = +$('nGens').value, p = +$('nPop').value, sd = +$('nSeeds').value;
+  $('trnMsg').textContent = `Running ${g * p * sd + 2 * Math.max(24, 4 * sd)} attempts…`;
+  try {
+    const {job} = await api('/api/train', {fw: S.fw, overrides: S.over, names, bounds, gens: g, pop: p, seeds: sd, w_time: +$('nTime').value});
+    trainJob = job;
+    const j = await follow(job, j => { $('trnProg').style.width = (100 * j.progress) + '%'; if (j.history) drawTrainPlot(j.history); });
+    if (j.error) throw new Error(j.error);
+    $('trnMsg').textContent = j.status === 'stopped' ? 'Stopped early; result is from the rounds completed.' : 'Finished.';
+    drawTrainPlot(j.result.history); showTrained(j.result);
+  } catch (e){ $('trnMsg').textContent = e.message; }
+  $('bTrain').disabled = false; $('bStop').disabled = true; trainJob = null;
+};
+$('bStop').onclick = () => { if (trainJob) api('/api/job/stop', {id: trainJob}); $('trnMsg').textContent = 'Stopping after this round…'; };
+
+/* ---------- 12b. agent ---------- */
+let agentConv = null, agentJob = null, lastWho = '';
+async function agentStatus(){
+  const s = await api('/api/agent/status');
+  if (!$('selModel').options.length) $('selModel').innerHTML = s.models.map(m => `<option${m === s.default ? ' selected' : ''}>${m}</option>`).join('');
+  $('agtStatus').innerHTML = s.key
+    ? 'Claude can read the selected program, run attempts and trials, train constants and propose changes. A proposal is saved to Simulation/candidates/ only if it beats the original on the same varied attempts. Your own files are never edited.'
+    : '<span style="color:var(--accent)">No API key found.</span> Put your Anthropic API key on one line in <span class="pn">Simulation/anthropic_key.txt</span>, or set <span class="pn">ANTHROPIC_API_KEY</span> before starting, then reopen this tab. The file is ignored by git.';
+  $('bSend').disabled = !s.key || !!agentJob;
+}
+function logAdd(cls, html){ const d = document.createElement('div'); d.className = cls; d.innerHTML = html; $('agtLog').appendChild(d); $('agtLog').scrollTop = 1e9; return d; }
+function who(w){ if (w !== lastWho){ logAdd('who', w); lastWho = w; } }
+function renderStep(st){
+  if (st.kind === 'text'){ who('Agent'); logAdd('say', esc(st.text)); }
+  else if (st.kind === 'tool'){ who('Agent'); const a = JSON.stringify(st.input); logAdd('step', esc(st.name + ' ' + (a.length > 170 ? a.slice(0, 170) + '…' : a))); }
+  else if (st.kind === 'result' && st.summary) logAdd('step', '→ ' + esc(st.summary));
+}
+async function agentSend(text){
+  text = text.trim(); if (!text || agentJob) return;
+  who('You'); logAdd('say', esc(text)); $('agtIn').value = ''; $('agtMsg').textContent = 'Working…';
+  $('bSend').disabled = true; $('bAgtStop').disabled = false;
+  try {
+    const r = await api('/api/agent', {conv: agentConv, text, fw: S.fw, overrides: S.over, model: $('selModel').value});
+    agentConv = r.conv; agentJob = r.job; let shown = 0, files = false;
+    const j = await follow(r.job, j => { const st = j.history || []; for (; shown < st.length; shown++){ renderStep(st[shown]); if (st[shown].file) files = true; } });
+    if (j.error){ logAdd('step bad', esc(j.error)); }
+    else if (j.result && j.result.proposed){ const o = j.result.proposed;
+      const b = logAdd('rowbtn', `<button class="txt">Load the proposed constants into the twin and run</button>`);
+      b.firstChild.onclick = () => { S.over = {}; for (const [k, v] of Object.entries(o)) if (S.tun.some(t => t.name === k)) S.over[k] = v;
+        buildParams(); S.trials = null; drawPaths(); runOnce(S.seed + 1, S.task, S.vary); window.scrollTo({top: 0, behavior: 'smooth'}); }; }
+    if (files) await loadInfo(true);
+    $('agtMsg').textContent = '';
+  } catch (e){ logAdd('step bad', esc(e.message)); $('agtMsg').textContent = ''; }
+  agentJob = null; $('bAgtStop').disabled = true; agentStatus();
+}
+$('bSend').onclick = () => agentSend($('agtIn').value);
+$('agtIn').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) agentSend($('agtIn').value); });
+$('agtIdeas').onclick = e => { const b = e.target.closest('button'); if (b && !$('bSend').disabled) agentSend(b.textContent); };
+$('bAgtStop').onclick = () => { if (agentJob) api('/api/job/stop', {id: agentJob}); $('agtMsg').textContent = 'Stopping after the current step…'; };
+$('bAgtNew').onclick = async () => { if (agentJob) return; if (agentConv) await api('/api/agent/reset', {conv: agentConv}); agentConv = null; lastWho = ''; $('agtLog').innerHTML = ''; };
+
+/* ---------- 13. history ---------- */
+async function loadHistory(){
+  const {items} = await api('/api/history');
+  if (!items.length){ $('hisBody').innerHTML = '<p class="m">Nothing yet. Trials and training runs are recorded here.</p>'; return; }
+  const ov = o => Object.entries(o).map(([k, v]) => `${k} ${v}`).join(', ') || 'file values';
+  $('hisBody').innerHTML = `<table><tr><th>When</th><th>Kind</th><th>Program</th><th>Constants</th><th>Result</th><th></th></tr>` + items.map((it, k) => {
+    const d = new Date(it.ts * 1000), s = it.summary, tr = it.kind === 'training';
+    const res = tr ? `${s.accepted ? 'recommended' : 'not recommended'}, ${s.gain >= 0 ? '+' : ''}${s.gain} · success ${pct(s.before.success)} → ${pct(s.after.success)} · clean ${pct(s.before.clean)} → ${pct(s.after.clean)}`
+                   : `${s.n} attempts · success ${pct(s.success)} · clean ${pct(s.clean)} · score ${s.score}`;
+    return `<tr><td>${d.toLocaleDateString(undefined, {day: 'numeric', month: 'short'})} ${d.toLocaleTimeString(undefined, {hour: '2-digit', minute: '2-digit'})}</td><td>${it.kind}</td><td>${esc(it.firmware)}</td>` +
+      `<td class="note" style="white-space:normal">${esc(ov(tr ? s.best : it.overrides))}</td><td>${res}</td><td><button class="txt" data-k="${k}">Load</button></td></tr>`; }).join('') + `</table>`;
+  $('hisBody').onclick = e => { const b = e.target.closest('button'); if (!b) return; const it = items[+b.dataset.k];
+    const o = it.kind === 'training' ? it.summary.best : it.overrides; S.over = {};
+    for (const [k, v] of Object.entries(o)) if (S.tun.some(t => t.name === k)) S.over[k] = v;
+    buildParams(); runOnce(S.seed + 1, S.task, S.vary); window.scrollTo({top: 0, behavior: 'smooth'}); };
+}
+$('bHisClear').onclick = async () => { await api('/api/history/clear', {}); loadHistory(); };
+
+/* ---------- 14. calibration ---------- */
+const GROUPS = [['robot', 'Robot'], ['motor', 'Drive'], ['sonar', 'Ultrasonic sensors'], ['track', 'Course'], ['decider', 'Course'], ['start', 'Course'], ['vary', 'Run-to-run variation']];
+const UNIT = k => { const m = k.match(/_(cm|deg|pct|s|ms|us)$/); return m ? {cm: 'cm', deg: '°', pct: '%', s: 's', ms: 'ms', us: 'µs'}[m[1]] : ''; };
+function buildCal(){
+  let h = '', lastG = '';
+  for (const [pre, title] of GROUPS){
+    const rows = S.info.calibration.filter(c => c.key.startsWith(pre + '.')); if (!rows.length) continue;
+    if (title !== lastG){ if (lastG) h += '</div>'; h += `<h3>${title}</h3><div class="grid g-cal">`; lastG = title; }
+    for (const c of rows) h += `<span>${esc(c.note)}</span><input type="number" step="any" data-k="${c.key}" value="${c.value}" aria-label="${esc(c.note)}">` +
+      `<span class="note">${UNIT(c.key)}</span>` +
+      `<span class="src${c.source === 'assumed' ? ' weak' : ''}" title="${c.key}">${c.source}${c.value !== c.default ? ' · was ' + c.default : ''}</span>`;
+  }
+  $('calBody').innerHTML = h + '</div>';
+}
+$('bCalSave').onclick = async () => {
+  const changes = {};
+  for (const el of $('calBody').querySelectorAll('input')){ const c = S.info.calibration.find(x => x.key === el.dataset.k);
+    if (isFinite(+el.value) && +el.value !== c.value) changes[c.key] = +el.value; }
+  if (!Object.keys(changes).length){ $('calMsg').textContent = 'No changes.'; return; }
+  S.info = await api('/api/calibration', {changes}); afterCal(`Saved ${Object.keys(changes).length} value(s) as measured.`);
+};
+$('bCalReset').onclick = async () => { S.info = await api('/api/calibration', {reset: true}); afterCal('Defaults restored.'); };
+function afterCal(msg){ buildCal(); $('calMsg').textContent = msg; drawStatic(S.info.track); S.trials = null; drawPaths(); runOnce(S.seed, S.task, S.vary); }
+
+/* ---------- 15. start-up ---------- */
+async function loadFw(id){
+  const f = await api('/api/firmware?id=' + encodeURIComponent(id));
+  S.fw = id; S.tun = f.tunables; S.over = {}; S.trials = null; S.trained = null;
+  $('sub').textContent = `${f.name} · ${f.lines} lines, run unmodified · course as dimensioned in the brief`;
+  buildParams(); buildTrain(); drawPaths(); $('triSum').innerHTML = ''; $('triStrip').innerHTML = ''; $('trnRes').innerHTML = ''; drawTrainPlot(null);
+}
+async function loadInfo(keep){
+  S.info = await api('/api/info');
+  const groups = {}; for (const f of S.info.firmware) (groups[f.group] ||= []).push(f);
+  $('selFw').innerHTML = Object.entries(groups).map(([g, fs]) => `<optgroup label="${g}">` + fs.map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join('') + '</optgroup>').join('');
+  if (keep && S.fw) $('selFw').value = S.fw;
+}
+$('selFw').onchange = async () => { await loadFw($('selFw').value); runOnce(S.seed, S.task, S.vary); };
+(async () => {
+  try {
+    await loadInfo(false);
+    if (!S.info.default){ $('verdict').innerHTML = `<span class="bad">No main_v*.py found in ${esc(S.info.repo)}</span>`; return; }
+    drawStatic(S.info.track); buildCal();
+    await loadFw(S.info.default);
+    requestAnimationFrame(frame);
+    await runOnce(1, S.task, false);
+  } catch (e){ $('verdict').innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
+})();
+</script>
+</body>
+</html>
