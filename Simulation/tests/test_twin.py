@@ -114,6 +114,24 @@ class SimTest(unittest.TestCase):
         self.assertGreater(r["progress"], 0.5)
 
 
+class StoreTest(unittest.TestCase):
+    def test_round_trip_and_fallback_when_disk_unusable(self):
+        import tempfile
+        from twin.store import Store
+        with tempfile.TemporaryDirectory() as tmp:
+            st = Store(os.path.join(tmp, "data", "x.db"))
+            st.add("trials", "main.py", "", {"KP": 2}, {"n": 1}, {"n": 1}, [{"seed": 1, "outcome": "success"}])
+            self.assertIsNone(st.note)
+            self.assertEqual(Store(os.path.join(tmp, "data", "x.db")).history()[0]["overrides"], {"KP": 2})
+            blocker = os.path.join(tmp, "file")
+            open(blocker, "w").close()
+            bad = Store(os.path.join(blocker, "data", "x.db"))        # a file where a folder is needed
+            self.assertIsNotNone(bad.note)
+            bad.add("trials", "main.py", "", {}, {}, {"n": 1})
+            self.assertEqual(len(bad.history()), 1)
+            bad._mem.close()
+
+
 class AgentTest(unittest.TestCase):
     """The tool loop, with the HTTP call replaced by a scripted reply."""
 

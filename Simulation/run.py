@@ -26,6 +26,8 @@ def check(repo):
         return 1
     src, name = app.read_fw(fw[0]["id"])
     cal = app.cal()
+    if app.store.note:
+        print("Note:", app.store.note)
     print("Program: %s   (repo: %s)" % (name, repo))
     for task in train.TASKS:
         r = sim.simulate(src, name, seed=1, task=task, vary=False, cal=cal, trace=False)
@@ -48,7 +50,9 @@ def main():
     args = ap.parse_args()
     if args.check:
         return check(args.repo)
-    httpd, port, _ = serve(args.repo, HERE, args.port)
+    httpd, port, app = serve(args.repo, HERE, args.port)
+    if app.store.note:
+        print("Note:", app.store.note)
     url = "http://127.0.0.1:%d/" % port
     print("Robot twin running at %s   (Ctrl+C to stop)" % url)
     if not args.no_browser:

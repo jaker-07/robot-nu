@@ -244,7 +244,7 @@ def make_handler(app, web_dir):
                     return self._send(200, {"key": bool(find_key(app.sim_dir)), "models": MODELS,
                                             "default": DEFAULT_MODEL})
                 if url.path == "/api/history":
-                    return self._send(200, {"items": app.store.history()})
+                    return self._send(200, {"items": app.store.history(), "note": app.store.note})
                 return self._send(404, {"error": "not found"})
             except Exception as exc:
                 return self._send(400, {"error": "%s: %s" % (type(exc).__name__, exc)})
