@@ -8,8 +8,10 @@ Every physical number the twin uses lives here, with where it came from:
   log        from the testing log / changelog / trim tests
   photo      estimated from project-site photos (830-point breadboard, 165 mm, as scale)
   datasheet  HC-SR04 / L298N / TT-motor typical values
-  fitted     tuned so the twin reproduces a reported real-world result
+  fitted     tuned so the twin reproduces reported real-world results
   assumed    no evidence; a plausible placeholder, the first things to measure
+  user       stated by you
+  measured   entered in the app
 
 Values changed through the app are stored in Simulation/calibration.json and
 override these defaults. Units: cm, s, degrees, % motor power.
@@ -39,11 +41,12 @@ CAL_ENTRIES = [
     ("motor.tau_stop_s", 0.07, "assumed", "Stop time constant (gearbox friction)"),
     ("motor.turn_scrub", 0.85, "assumed", "Fraction of the ideal turn rate achieved when pivoting or spinning"),
     # ---- ultrasonic sensors
-    ("sonar.beam_full_deg", 15.0, "datasheet", "Half-angle with full sensitivity"),
-    ("sonar.beam_edge_deg", 30.0, "assumed", "Half-angle beyond which nothing is heard"),
-    ("sonar.inc_full_deg", 30.0, "assumed", "Wall incidence angle up to which an echo is certain"),
-    ("sonar.graze_range_cm", 70.0, "fitted", "Reach of an echo off a wall met at a grazing angle (matte board walls)"),
-    ("sonar.edge_gain", 0.5, "assumed", "Reach of the outermost rays of the beam, as a fraction of the axis"),
+    ("sonar.beam_full_deg", 11.0, "fitted", "Beam half-angle with full sensitivity (fitted to the recorded results of ten program versions)"),
+    ("sonar.beam_edge_deg", 13.0, "fitted", "Beam half-angle beyond which nothing is heard"),
+    ("sonar.inc_full_deg", 30.0, "fitted", "Wall incidence angle up to which an echo is certain"),
+    ("sonar.graze_range_cm", 60.0, "fitted", "Reach of an echo off a wall met at a grazing angle (matte board walls)"),
+    ("sonar.edge_gain", 0.65, "fitted", "Reach of the outermost rays of the beam, as a fraction of the axis"),
+    ("sonar.min_range_cm", 2.0, "datasheet", "Closest distance a sensor can read; nearer than this it reports nothing"),
     ("sonar.noise_cm", 0.3, "datasheet", "Reading noise (1 sigma)"),
     ("sonar.dropout", 0.01, "assumed", "Chance a ping returns nothing"),
     ("sonar.xtalk_p0", 0.30, "assumed", "Cross-talk strength: chance a sensor hears the previous sensor's ping"),
@@ -51,13 +54,14 @@ CAL_ENTRIES = [
     ("sonar.no_echo_ms", 38.0, "datasheet", "ECHO stays high this long when nothing returns (sensor 'busy')"),
     ("sonar.rise_delay_us", 460.0, "datasheet", "TRIG to ECHO rising edge"),
     # ---- course
+    ("track.uniform_width_cm", 30.0, "user", "Corridor width used for every leg (0 = inner wall from the brief's own lengths, which narrows and widens)"),
     ("track.wall_radius_cm", 0.3, "assumed", "Half-thickness of a wall for contact"),
     ("decider.gap_cm", 13.0, "brief", "End of outer wall to the Task Decider"),
-    ("decider.offset_cm", 5.9, "fitted", "Task Decider face start, measured across from the outer wall line (5.9 = centred)"),
+    ("decider.offset_cm", -1.0, "assumed", "Task Decider face start, measured across from the outer wall line (-1 = centred in the corridor)"),
     ("decider.width_cm", 24.0, "figure", "Task Decider face width"),
     ("decider.depth_cm", 14.0, "figure", "Task Decider depth"),
     ("decider.delay_s", 1.5, "assumed", "Robot at rest to flag appearing"),
-    ("decider.flag_reach_cm", 16.0, "assumed", "How far in front of the Decider the IR sensor still sees the flag"),
+    ("decider.flag_reach_cm", 20.0, "assumed", "How far in front of the Decider the IR sensor still sees the flag"),
     ("start.axle_y_cm", 12.0, "assumed", "Start position: axle this far past the start line (tail on the line)"),
     # ---- run-to-run variation used by trials and training
     ("vary.start_lat_cm", 1.5, "assumed", "Start placement error, sideways (1 sigma)"),
@@ -70,6 +74,12 @@ CAL_ENTRIES = [
 
 # As-built wiring (main_v21.py docstring). Code that addresses other pins reads nothing,
 # exactly as on the robot.
+#
+# One thing changed during the build: the right motor was turned round on 11 Nov
+# (trim_test_v3), so "right wheel forward" moved from IN4 to IN3. Programs written before
+# that drive IN4. HARDWARE "auto" works out which build a program was written for from
+# its first drive command and runs it on that build; "now" and "nov10" force one.
+HARDWARE = ("auto", "now", "nov10")
 WIRING = {
     "motor_left": {"en": 10, "fwd": 12, "rev": 11},     # ENA, IN2, IN1
     "motor_right": {"en": 15, "fwd": 13, "rev": 14},    # ENB, IN3, IN4
@@ -79,6 +89,24 @@ WIRING = {
     "strip": 27,
     "led": 25,
 }
+
+
+# Model values nobody has measured are also varied from attempt to attempt in trials and
+# training (relative 1-sigma below), so a setting has to work across the plausible range
+# rather than for one guess. A value stops being varied once you enter a measurement.
+UNCERTAIN = {
+    "motor.dead_run_pct": 0.15, "motor.dead_start_pct": 0.06, "motor.tau_s": 0.30, "motor.tau_stop_s": 0.30,
+    "motor.turn_scrub": 0.07, "sonar.beam_edge_deg": 0.12, "sonar.inc_full_deg": 0.15,
+    "sonar.graze_range_cm": 0.30, "sonar.edge_gain": 0.30, "sonar.dropout": 0.50, "sonar.xtalk_p0": 0.50,
+    "sonar.xtalk_len_cm": 0.30, "decider.delay_s": 0.30, "decider.flag_reach_cm": 0.10,
+}
+
+
+def with_uncertainty(values, sources):
+    """Attach the list of still-unmeasured values to a calibration dict."""
+    out = dict(values)
+    out["_unc"] = {k: s for k, s in UNCERTAIN.items() if sources.get(k) in ("assumed", "fitted")}
+    return out
 
 
 def defaults():

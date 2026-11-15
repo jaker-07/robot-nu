@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import math
 
-from .track import START_WIDTH
 
 SOUND_US_PER_CM = 58.31          # there and back, 343 m/s
 
@@ -57,7 +56,7 @@ class Robot:
         lat = rng.gauss(0.0, cal["vary.start_lat_cm"]) if vary else 0.0
         head = rng.gauss(0.0, cal["vary.start_heading_deg"]) if vary else 0.0
         lat = max(-4.0, min(4.0, lat))
-        self.x = START_WIDTH / 2.0 + lat
+        self.x = track.start_mid[0] + lat
         self.y = cal["start.axle_y_cm"]
         self.th = math.radians(90.0 + head)
         self.vl = self.vr = 0.0          # wheel ground speeds, cm/s
@@ -248,6 +247,7 @@ class Sonar:
         self.edge_gain = cal["sonar.edge_gain"]
         self.graze_range = cal["sonar.graze_range_cm"]
         self.noise = cal["sonar.noise_cm"]
+        self.min_range = cal["sonar.min_range_cm"]
         self.dropout = cal["sonar.dropout"]
         self.xt_p0 = cal["sonar.xtalk_p0"]
         self.xt_len = cal["sonar.xtalk_len_cm"]
@@ -286,7 +286,9 @@ class Sonar:
             if t <= reach * gain * jitter:
                 best = t
         if best is not None:
-            best = max(2.0, best + rng.gauss(0.0, self.noise))
+            best += rng.gauss(0.0, self.noise)
+            if best < self.min_range:        # too close: the echo returns before the sensor is listening
+                return None
         return best
 
     def trigger(self, name, t_us):

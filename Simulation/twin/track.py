@@ -1,7 +1,9 @@
 """The AE1 course, built from the wall lengths and angles dimensioned in the brief.
 
-The brief's numbers do not give a constant-width corridor: the five legs come out
-30.0 / 30.0 / 25.4 / 23.1 / 35.8 cm wide. The twin keeps them as dimensioned.
+By default the corridor is a constant width (track.uniform_width_cm, 30 cm): the outer
+wall is taken from the brief and the inner wall is drawn parallel to it. Setting that
+value to 0 builds the inner wall from the brief's own lengths instead, which gives legs
+30.0 / 30.0 / 25.4 / 23.1 / 35.8 cm wide.
 
 World frame: cm, origin at the left end of the start line, x to the right, y up
 (the robot starts driving in +y).
@@ -43,7 +45,14 @@ class Track:
             return pts
 
         self.outer = chain((0.0, 0.0), OUTER)
-        self.inner = chain((START_WIDTH, 0.0), INNER)
+        width = cal.get("track.uniform_width_cm", 0.0)
+        if width > 0:
+            self.inner = self._parallel(self.outer, width)
+            if vary:                      # the built course is never perfectly parallel
+                self.inner = [(x + rng.gauss(0.0, sl), y + rng.gauss(0.0, sl)) for x, y in self.inner]
+        else:
+            self.inner = chain((START_WIDTH, 0.0), INNER)
+        self.start_mid = ((self.outer[0][0] + self.inner[0][0]) / 2.0, self.outer[0][1])
 
         # Task Decider: a box whose near face starts on the outer wall line, gap_cm past
         # the end of the outer wall, and reaches width_cm across the corridor.
@@ -54,6 +63,9 @@ class Track:
         nx, ny = dy, -dx                                  # across the corridor, outer -> inner
         g, w, dep = cal["decider.gap_cm"], cal["decider.width_cm"], cal["decider.depth_cm"]
         off = cal["decider.offset_cm"]
+        if off < 0:                       # centred across the last leg
+            ix, iy = self.inner[-1]
+            off = (abs((ix - ox) * nx + (iy - oy) * ny) - w) / 2.0
         a = (ox + g * dx + off * nx, oy + g * dy + off * ny)
         b = (a[0] + w * nx, a[1] + w * ny)
         c = (b[0] + dep * dx, b[1] + dep * dy)
@@ -92,6 +104,29 @@ class Track:
             mx = (self.inner[i][0] + self.inner[i + 1][0]) / 2.0
             my = (self.inner[i][1] + self.inner[i + 1][1]) / 2.0
             self.widths.append(abs((mx - s[0]) * s[4] + (my - s[1]) * s[5]))
+
+    @staticmethod
+    def _parallel(outer, width):
+        """Inner wall: the outer wall moved `width` to the right of the driving direction.
+        Its far end runs 5 cm past the outer wall's, as in the brief."""
+        lines = []
+        for i in range(len(outer) - 1):
+            (ax, ay), (bx, by) = outer[i], outer[i + 1]
+            ln = math.hypot(bx - ax, by - ay)
+            dx, dy = (bx - ax) / ln, (by - ay) / ln
+            lines.append((ax + width * dy, ay - width * dx, dx, dy))
+        pts = [(lines[0][0], lines[0][1])]
+        for i in range(1, len(lines)):
+            px, py, dx, dy = lines[i - 1]
+            qx, qy, ex, ey = lines[i]
+            den = dx * ey - dy * ex
+            t = ((qx - px) * ey - (qy - py) * ex) / den
+            pts.append((px + t * dx, py + t * dy))
+        qx, qy, ex, ey = lines[-1]
+        ox, oy = outer[-1]
+        along = (ox - qx) * ex + (oy - qy) * ey + 5.0
+        pts.append((qx + along * ex, qy + along * ey))
+        return pts
 
     def project(self, x, y):
         """Nearest point on the centreline -> (distance along it, signed sideways offset

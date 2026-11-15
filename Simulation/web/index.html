@@ -38,6 +38,8 @@ svg{display:block;width:100%;height:auto}
 .kv tr.sep td{border-top:1px solid var(--line);padding-top:6px}
 h2{font:600 11px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:0 0 6px}
 .tele h2:not(:first-child){margin-top:14px}
+.size{display:grid;grid-template-columns:max-content 1fr 58px max-content;gap:4px 8px;align-items:center;color:var(--mut);font-size:12px}
+.size input[type=number]{width:58px}
 .transport{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:10px 0 6px}
 .seg{display:inline-flex}.seg button{border-radius:0;margin-left:-1px;font-family:var(--mono);padding:0 8px}
 .seg button:first-child{margin-left:0}
@@ -81,7 +83,8 @@ textarea{width:100%;padding:6px 8px;resize:vertical;font-size:13px}
     <div class="title">ROBOT TWIN <span id="sub"></span></div>
     <label>Program <select id="selFw" aria-label="Robot program"></select></label>
     <label>Signal <select id="selTask" aria-label="Task signal"><option value="buzzer">buzzer (3 s)</option><option value="light">light (5 s)</option><option value="spin" selected>spin (10 s)</option></select></label>
-    <label title="Random start placement, battery level, motor mismatch and wall positions"><input type="checkbox" id="chkVary"> Vary conditions</label>
+    <label title="Which build of the robot the program runs on. Auto reads it from the program: versions written before the right motor was turned round (11 Nov) drive IN4 for right-forward.">Build <select id="selHw" aria-label="Hardware build"><option value="auto" selected>auto</option><option value="now">as built now</option><option value="nov10">10 Nov build</option></select></label>
+    <label title="Random start placement, battery level, motor mismatch, wall positions and unmeasured model values"><input type="checkbox" id="chkVary"> Vary conditions</label>
     <button id="bRun">New run</button>
   </div>
 
@@ -96,6 +99,12 @@ textarea{width:100%;padding:6px 8px;resize:vertical;font-size:13px}
       <table class="kv" id="tele"></table>
       <h2>Result</h2>
       <table class="kv" id="result"></table>
+      <h2>Robot size</h2>
+      <div class="size">
+        <span>width</span><input type="range" id="rW" min="12" max="26" step="0.5" aria-label="Robot width"><input type="number" id="nW" min="8" max="30" step="0.1" aria-label="Robot width, cm"><span>cm</span>
+        <span>length</span><input type="range" id="rL" min="14" max="30" step="0.5" aria-label="Robot length"><input type="number" id="nL" min="10" max="36" step="0.1" aria-label="Robot length, cm"><span>cm</span>
+      </div>
+      <p class="m" style="margin:6px 0 0;font-size:11px">Width is across the widest point (the angled sensors); length is front sensor face to rear edge. Everything else scales with them.</p>
     </aside>
   </div>
 
@@ -117,6 +126,7 @@ textarea{width:100%;padding:6px 8px;resize:vertical;font-size:13px}
     <button role="tab" data-t="tri" aria-selected="false">Trials</button>
     <button role="tab" data-t="trn" aria-selected="false">Training</button>
     <button role="tab" data-t="agt" aria-selected="false">Agent</button>
+    <button role="tab" data-t="val" aria-selected="false">Log check</button>
     <button role="tab" data-t="his" aria-selected="false">History</button>
     <button role="tab" data-t="cal" aria-selected="false">Calibration</button>
   </div>
@@ -128,7 +138,7 @@ textarea{width:100%;padding:6px 8px;resize:vertical;font-size:13px}
   </section>
 
   <section class="panel" id="p-tri">
-    <p class="m">Repeats the run with start placement, battery level, motor mismatch, sensor noise and wall positions redrawn each time, cycling the three task signals.</p>
+    <p class="m">Repeats the run with start placement, battery level, motor mismatch, sensor noise and wall positions redrawn each time, cycling the three task signals. Model values that are still guesses are also redrawn within their plausible range, so a result has to hold across what is not yet known.</p>
     <div class="row"><label>Attempts <select id="selN"><option>12</option><option selected>24</option><option>48</option><option>96</option></select></label>
       <button id="bTrials">Run trials</button><span class="msg" id="triMsg"></span></div>
     <div class="prog"><i id="triProg"></i></div>
@@ -162,6 +172,13 @@ textarea{width:100%;padding:6px 8px;resize:vertical;font-size:13px}
     <textarea id="agtIn" rows="3" placeholder="Ask about the program, or set the agent a task. Ctrl/Cmd+Enter sends." aria-label="Message to the agent"></textarea>
     <div class="row"><button id="bSend">Send</button><button id="bAgtStop" disabled>Stop</button><button id="bAgtNew">New conversation</button>
       <label>Model <select id="selModel"></select></label><span class="msg" id="agtMsg"></span></div>
+  </section>
+
+  <section class="panel" id="p-val">
+    <p class="m">Runs every program that has a recorded real-world result, on the hardware build it was written for, and compares the twin's outcome with the record. A model that only suits the latest version fails this check.</p>
+    <div class="row"><button id="bCheck">Run log check</button><span class="msg" id="valMsg"></span></div>
+    <div class="prog"><i id="valProg"></i></div>
+    <div id="valBody"></div>
   </section>
 
   <section class="panel" id="p-his">
@@ -365,13 +382,14 @@ function showResult(r){
     ['signal / task', `${r.task} / ${task}`, 'sep'],
     r.performed.includes('spin') ? ['spin', `${Math.abs(r.spin_deg).toFixed(0)}°`] : null,
     ['score', `${r.score.toFixed(0)} / 60 (nav ${r.nav_pts.toFixed(0)}, task ${r.task_pts.toFixed(0)})`, 'sep'],
+    ['build', r.hardware === 'nov10' ? '10 Nov (right fwd = IN4)' : 'as built now'],
     ['seed', `${r.seed}${r.vary ? ', varied' : ', nominal'}`],
   ]);
 }
 async function runOnce(seed, task, vary){
   if (S.busy) return; S.busy = true; $('bRun').disabled = true;
   try {
-    const r = await api('/api/run', {fw: S.fw, overrides: S.over, seed, task, vary});
+    const r = await api('/api/run', {fw: S.fw, overrides: S.over, seed, task, vary, hardware: $('selHw').value});
     S.run = r; S.T = r.trace.t[r.trace.t.length - 1]; S.t = 0; S.seed = seed;
     if (JSON.stringify(r.track) !== JSON.stringify(S.trackDrawn)) drawStatic(r.track);
     showResult(r); drawPlot(); setPlay(true);
@@ -453,7 +471,7 @@ function showTrials(res){
 $('bTrials').onclick = async () => {
   $('bTrials').disabled = true; $('triMsg').textContent = 'Running…'; $('triProg').style.width = '0';
   try {
-    const {job} = await api('/api/trials', {fw: S.fw, overrides: S.over, n: +$('selN').value});
+    const {job} = await api('/api/trials', {fw: S.fw, overrides: S.over, n: +$('selN').value, hardware: $('selHw').value});
     const j = await follow(job, j => $('triProg').style.width = (100 * j.progress) + '%');
     if (j.error) throw new Error(j.error);
     showTrials(j.result);
@@ -514,7 +532,7 @@ $('bTrain').onclick = async () => {
   const g = +$('nGens').value, p = +$('nPop').value, sd = +$('nSeeds').value;
   $('trnMsg').textContent = `Running ${g * p * sd + 2 * Math.max(24, 4 * sd)} attempts…`;
   try {
-    const {job} = await api('/api/train', {fw: S.fw, overrides: S.over, names, bounds, gens: g, pop: p, seeds: sd, w_time: +$('nTime').value});
+    const {job} = await api('/api/train', {fw: S.fw, overrides: S.over, names, bounds, gens: g, pop: p, seeds: sd, w_time: +$('nTime').value, hardware: $('selHw').value});
     trainJob = job;
     const j = await follow(job, j => { $('trnProg').style.width = (100 * j.progress) + '%'; if (j.history) drawTrainPlot(j.history); });
     if (j.error) throw new Error(j.error);
@@ -564,6 +582,22 @@ $('agtIdeas').onclick = e => { const b = e.target.closest('button'); if (b && !$
 $('bAgtStop').onclick = () => { if (agentJob) api('/api/job/stop', {id: agentJob}); $('agtMsg').textContent = 'Stopping after the current step…'; };
 $('bAgtNew').onclick = async () => { if (agentJob) return; if (agentConv) await api('/api/agent/reset', {conv: agentConv}); agentConv = null; lastWho = ''; $('agtLog').innerHTML = ''; };
 
+/* ---------- 13b. log check ---------- */
+$('bCheck').onclick = async () => {
+  $('bCheck').disabled = true; $('valMsg').textContent = 'Running…'; $('valProg').style.width = '0';
+  try {
+    const {job} = await api('/api/check', {n: 12});
+    const j = await follow(job, j => $('valProg').style.width = (100 * j.progress) + '%');
+    if (j.error) throw new Error(j.error);
+    const rs = j.result.rows, have = rs.filter(r => r.available), ok = have.filter(r => r.agrees).length;
+    $('valMsg').textContent = `${ok} of ${have.length} recorded results reproduced (${j.result.n} varied attempts each).`;
+    $('valBody').innerHTML = `<table class="t"><tr><th>Program</th><th>Recorded on the real robot</th><th class="r">Reaches end</th><th class="r">Stops at end</th><th class="r">Stops early</th><th class="r">Contacts/run</th><th>Build</th><th>Twin</th></tr>` +
+      rs.map(r => r.available ? `<tr><td>${esc(r.program)}</td><td class="s">${esc(r.record)}</td><td class="r">${pct(r.reaches)}</td><td class="r">${pct(r.stop_end)}</td><td class="r">${pct(r.stop_early)}</td><td class="r">${r.contacts.toFixed(1)}</td><td>${r.hardware.map(h => h === 'nov10' ? '10 Nov' : 'now').join('/')}</td><td>${r.agrees ? 'agrees' : '<span class="bad">differs</span>'}</td></tr>`
+                              : `<tr><td>${esc(r.program)}</td><td class="s">${esc(r.record)}</td><td colspan="6" class="s m">file not found</td></tr>`).join('') + `</table>`;
+  } catch (e){ $('valMsg').textContent = e.message; }
+  $('bCheck').disabled = false;
+};
+
 /* ---------- 14. history ---------- */
 async function loadHistory(){
   const {items, note} = await api('/api/history'), warn = note ? `<p class="bad">${esc(note)}</p>` : '';
@@ -589,7 +623,7 @@ function buildCal(){
     const rws = S.info.calibration.filter(c => c.key.startsWith(pre + '.')); if (!rws.length) continue;
     if (title !== lastG){ if (lastG) h += '</div>'; h += `<h2 style="margin-top:14px">${title}</h2><div class="grid g-cal">`; lastG = title; }
     for (const c of rws) h += `<span title="${c.key}">${esc(c.note)}</span><input type="number" step="any" data-k="${c.key}" value="${c.value}" aria-label="${esc(c.note)}">` +
-      `<span class="note">${UNIT(c.key)}</span><span class="src${c.source === 'assumed' ? ' weak' : ''}">${c.source}${c.value !== c.default ? ' (default ' + c.default + ')' : ''}</span>`;
+      `<span class="note">${UNIT(c.key)}</span><span class="src${c.source === 'assumed' ? ' weak' : ''}">${c.source}${c.value !== c.default ? ' (default ' + c.default + ')' : ''}${c.key in S.info.uncertain ? ' · varied ±' + Math.round(100 * S.info.uncertain[c.key]) + '% in trials' : ''}</span>`;
   }
   $('calBody').innerHTML = h + '</div>';
 }
@@ -601,7 +635,21 @@ $('bCalSave').onclick = async () => {
   S.info = await api('/api/calibration', {changes}); afterCal(`Saved ${Object.keys(changes).length} value(s) as measured.`);
 };
 $('bCalReset').onclick = async () => { S.info = await api('/api/calibration', {reset: true}); afterCal('Defaults restored.'); };
-function afterCal(msg){ buildCal(); $('calMsg').textContent = msg; drawStatic(S.info.track); S.trials = null; drawPaths(); runOnce(S.seed, $('selTask').value, $('chkVary').checked); }
+const LAT = ['robot.track_cm', 'robot.body_half_width_cm', 'robot.sensor_span_cm', 'robot.side_sensor_y_cm'];
+const LON = ['robot.front_reach_cm', 'robot.rear_reach_cm', 'robot.side_sensor_x_cm', 'robot.ir_x_cm'];
+function syncSize(){ const r = S.info.robot; $('rW').value = $('nW').value = +r.width.toFixed(1); $('rL').value = $('nL').value = +r.length.toFixed(1); }
+async function applySize(){
+  const W = +$('nW').value, L = +$('nL').value; if (!(W >= 8 && W <= 30 && L >= 10 && L <= 36)){ syncSize(); return; }
+  const cv = k => S.info.calibration.find(x => x.key === k).value, ky = W / S.info.robot.width, kx = L / S.info.robot.length, changes = {};
+  for (const k of LAT) changes[k] = +(cv(k) * ky).toFixed(2);
+  for (const k of LON) changes[k] = +(cv(k) * kx).toFixed(2);
+  S.info = await api('/api/calibration', {changes, source: 'user'}); afterCal('');
+}
+for (const [r, n] of [['rW', 'nW'], ['rL', 'nL']]){
+  $(r).oninput = () => { $(n).value = $(r).value; };
+  $(r).onchange = applySize; $(n).onchange = () => { $(r).value = $(n).value; applySize(); };
+}
+function afterCal(msg){ syncSize(); buildCal(); $('calMsg').textContent = msg; drawStatic(S.info.track); S.trials = null; drawPaths(); runOnce(S.seed, $('selTask').value, $('chkVary').checked); }
 
 /* ---------- 16. start-up ---------- */
 async function loadFw(id){
@@ -616,12 +664,13 @@ async function loadInfo(keep){
   $('selFw').innerHTML = Object.entries(groups).map(([g, fs]) => `<optgroup label="${g}">` + fs.map(f => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join('') + '</optgroup>').join('');
   if (keep && S.fw) $('selFw').value = S.fw;
 }
+$('selHw').onchange = () => runOnce(S.seed, $('selTask').value, $('chkVary').checked);
 $('selFw').onchange = async () => { await loadFw($('selFw').value); runOnce(S.seed, $('selTask').value, $('chkVary').checked); };
 (async () => {
   try {
     await loadInfo(false);
     if (!S.info.default){ $('result').innerHTML = rows([['error', `<span class="bad">No main_v*.py found in ${esc(S.info.repo)}</span>`]]); return; }
-    drawStatic(S.info.track); buildCal();
+    drawStatic(S.info.track); buildCal(); syncSize();
     await loadFw(S.info.default);
     requestAnimationFrame(frame);
     await runOnce(1, $('selTask').value, false);

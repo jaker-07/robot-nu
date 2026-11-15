@@ -18,7 +18,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import config, params, sim, train
+from . import config, history, params, sim, train
 from .agent import DEFAULT_MODEL, MODELS, Agent, find_key
 from .robot import build_hull
 from .store import Store
@@ -81,7 +81,10 @@ class App:
                 "wheel_track": cal["robot.track_cm"],
                 "sensors": {"L": [sx, sy, ang], "F": [cal["robot.front_reach_cm"], 0, 0], "R": [sx, -sy, -ang]},
                 "ir_x": cal["robot.ir_x_cm"],
+                "width": cal["robot.sensor_span_cm"],
+                "length": cal["robot.front_reach_cm"] + cal["robot.rear_reach_cm"],
             },
+            "uncertain": {k: v for k, v in config.UNCERTAIN.items() if src.get(k) in ("assumed", "fitted")},
             "wall_r": cal["track.wall_radius_cm"],
             "calibration": config.describe(cal, src),
             "default_train": params.DEFAULT_TRAIN,
@@ -89,7 +92,24 @@ class App:
         }
 
     def cal(self):
-        return config.load(self.cal_path)[0]
+        """Calibration values, plus the list of unmeasured ones that trials should vary."""
+        return config.with_uncertainty(*config.load(self.cal_path))
+
+    @staticmethod
+    def hw(body):
+        h = body.get("hardware", "auto")
+        return h if h in config.HARDWARE else "auto"
+
+    def run_check(self, body):
+        n = max(6, min(40, int(body.get("n", 12))))
+        cal = self.cal()
+
+        def fn(job):
+            rows = history.check(history.finder(self.repo), cal, n,
+                                 progress=lambda p: job.__setitem__("progress", p))
+            return {"rows": rows, "n": n}
+
+        return self.start_job("check", fn)
 
     # ----------------------------------------------------------------- jobs
     def start_job(self, kind, fn):
@@ -120,7 +140,7 @@ class App:
         cal = self.cal()
 
         def fn(job):
-            out = train.trials(src, name, over, n, True, cal,
+            out = train.trials(src, name, over, n, True, cal, hardware=self.hw(body),
                                seed0=int(body.get("seed0", 1)),
                                progress=lambda p: job.__setitem__("progress", p))
             out["id"] = self.store.add("trials", name, body.get("label") or "", over,
@@ -149,7 +169,7 @@ class App:
                     job["history"] = list(history)
 
             out = train.optimise(src, name, names, bounds, base, cal, gens=gens, pop=pop,
-                                 seeds=seeds, vary=True, w_time=w_time,
+                                 seeds=seeds, vary=True, w_time=w_time, hardware=self.hw(body),
                                  study_seed=int(time.time()) % 9973 + 1,
                                  progress=progress, should_stop=lambda: job["cancel"])
             cfg = {"names": out["names"], "gens": gens, "pop": pop, "seeds": seeds, "w_time": w_time}
@@ -260,11 +280,14 @@ def make_handler(app, web_dir):
                     if task not in ("buzzer", "light", "spin", "random"):
                         task = "spin"
                     res = sim.simulate(src, name, over, seed=int(body.get("seed", 1)), task=task,
-                                       vary=bool(body.get("vary")), cal=app.cal(), trace=True)
+                                       vary=bool(body.get("vary")), cal=app.cal(), trace=True,
+                                       hardware=app.hw(body))
                     res["overrides"] = over
                     return self._send(200, res)
                 if url.path == "/api/trials":
                     return self._send(200, {"job": app.run_trials(body)})
+                if url.path == "/api/check":
+                    return self._send(200, {"job": app.run_check(body)})
                 if url.path == "/api/train":
                     return self._send(200, {"job": app.run_training(body)})
                 if url.path == "/api/agent":
@@ -284,7 +307,8 @@ def make_handler(app, web_dir):
                     if body.get("reset"):
                         config.reset(app.cal_path)
                     else:
-                        config.save(app.cal_path, body.get("changes") or {})
+                        config.save(app.cal_path, body.get("changes") or {},
+                                    "user" if body.get("source") == "user" else "measured")
                     return self._send(200, app.info())
                 if url.path == "/api/history/clear":
                     app.store.clear()

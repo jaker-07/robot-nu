@@ -19,8 +19,9 @@ TASKS = ("buzzer", "light", "spin")
 
 
 def run_one(job):
-    src, name, overrides, seed, task, vary, cal, want_path = job
-    r = sim.simulate(src, name, overrides, seed, task, vary, cal, trace=want_path)
+    src, name, overrides, seed, task, vary, cal, want_path = job[:8]
+    hardware = job[8] if len(job) > 8 else "auto"
+    r = sim.simulate(src, name, overrides, seed, task, vary, cal, trace=want_path, hardware=hardware)
     if want_path:
         tr = r.pop("trace")
         r["path"] = [[tr["x"][i], tr["y"][i]] for i in range(0, len(tr["x"]), 5)]
@@ -95,12 +96,12 @@ def aggregate(results, w_time=0.0):
     }
 
 
-def trials(src, name, overrides, n, vary, cal, seed0=1, progress=None, pool=None):
+def trials(src, name, overrides, n, vary, cal, seed0=1, progress=None, pool=None, hardware="auto"):
     own = pool is None
     if own:
         pool = make_pool()
     try:
-        jobs = [(src, name, overrides, seed0 + i, TASKS[i % 3], vary, cal, True) for i in range(n)]
+        jobs = [(src, name, overrides, seed0 + i, TASKS[i % 3], vary, cal, True, hardware) for i in range(n)]
         results = run_jobs(jobs, pool, (lambda k: progress(k / n)) if progress else None)
     finally:
         if own and pool is not None:
@@ -109,7 +110,7 @@ def trials(src, name, overrides, n, vary, cal, seed0=1, progress=None, pool=None
 
 
 def optimise(src, name, names, bounds, base, cal, gens=8, pop=12, seeds=6, vary=True,
-             w_time=0.0, study_seed=1, progress=None, should_stop=None):
+             w_time=0.0, study_seed=1, progress=None, should_stop=None, hardware="auto"):
     """Evolution-strategy search over the chosen constants.
 
     Every candidate in a generation faces the same set of attempts, so they are compared
@@ -166,7 +167,7 @@ def optimise(src, name, names, bounds, base, cal, gens=8, pop=12, seeds=6, vary=
             while len(cands) < pop:
                 cands.append([min(1.0, max(0.0, centre[i] + sigma[i] * rng.gauss(0, 1))) for i in range(d)])
             overs = [to_overrides(z) for z in cands]
-            jobs = [(src, name, o, s, TASKS[k % 3], vary, cal, False)
+            jobs = [(src, name, o, s, TASKS[k % 3], vary, cal, False, hardware)
                     for o in overs for k, s in enumerate(gen_seeds)]
             res = run_jobs(jobs, pool, tick)
             aggs = [aggregate(res[i * seeds:(i + 1) * seeds], w_time) for i in range(pop)]
@@ -192,7 +193,7 @@ def optimise(src, name, names, bounds, base, cal, gens=8, pop=12, seeds=6, vary=
         n_val = max(24, 4 * seeds)
         val_seeds = [900000 + 31 * study_seed + i for i in range(n_val)]
         best_over = to_overrides(best_z)
-        jobs = [(src, name, o, s, TASKS[k % 3], vary, cal, False)
+        jobs = [(src, name, o, s, TASKS[k % 3], vary, cal, False, hardware)
                 for o in (base_over, best_over) for k, s in enumerate(val_seeds)]
         res = run_jobs(jobs, pool, tick)
         before = aggregate(res[:n_val], w_time)

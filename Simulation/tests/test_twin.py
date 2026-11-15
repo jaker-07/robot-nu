@@ -36,9 +36,15 @@ time.sleep(1)
 
 
 class TrackTest(unittest.TestCase):
-    def test_leg_widths_follow_the_brief(self):
-        widths = [round(w, 1) for w in Track(CAL).widths]
-        self.assertEqual(widths, [30.0, 30.0, 25.4, 23.1, 35.8])
+    def test_default_course_is_30_cm_throughout(self):
+        tk = Track(CAL)
+        self.assertEqual([round(w, 1) for w in tk.widths], [30.0] * 5)
+        self.assertEqual([(round(x), round(y)) for x, y in tk.outer[:3]], [(0, 0), (0, 80), (93, 80)])   # outer wall as in the brief
+
+    def test_brief_lengths_give_a_varying_width(self):
+        cal = dict(CAL)
+        cal["track.uniform_width_cm"] = 0.0
+        self.assertEqual([round(w, 1) for w in Track(cal).widths], [30.0, 30.0, 25.4, 23.1, 35.8])
 
 
 class ParamsTest(unittest.TestCase):
@@ -91,6 +97,26 @@ class SimTest(unittest.TestCase):
         self.assertAlmostEqual(dist, expect, delta=0.15 * expect)
         self.assertAlmostEqual(tr["x"][-1], tr["x"][0], delta=1.0)     # trimmed: drives straight
         self.assertIsNone(r["error"])
+
+    def test_old_programs_run_on_the_build_they_were_written_for(self):
+        old = STRAIGHT.replace("Pin(13, Pin.OUT), Pin(14, Pin.OUT)", "Pin(14, Pin.OUT), Pin(13, Pin.OUT)")   # right forward = IN4
+        for src, build in ((STRAIGHT, "now"), (old, "nov10")):
+            r = sim.simulate(src, "s.py", seed=1, vary=False, cal=CAL, trace=True)
+            self.assertEqual(r["hardware"], build)
+            self.assertGreater(r["trace"]["y"][-1] - r["trace"]["y"][0], 30)        # drives forwards on its own build
+        wrong = sim.simulate(old, "s.py", seed=1, vary=False, cal=CAL, trace=True, hardware="now")
+        self.assertLess(abs(wrong["trace"]["y"][-1] - wrong["trace"]["y"][0]), 15)   # on today's robot it just turns
+
+    def test_unmeasured_values_vary_between_attempts_only_when_asked(self):
+        cal = config.with_uncertainty(config.defaults(), {k: s for k, _, s, _ in config.CAL_ENTRIES})
+        keep = dict(cal)
+        a = sim.simulate(STRAIGHT, "s.py", seed=1, vary=True, cal=cal, trace=True)
+        b = sim.simulate(STRAIGHT, "s.py", seed=2, vary=True, cal=cal, trace=True)
+        self.assertNotEqual(a["trace"]["y"][-1], b["trace"]["y"][-1])
+        self.assertEqual(cal, keep)                                                  # the shared table is not altered
+        c = sim.simulate(STRAIGHT, "s.py", seed=1, vary=False, cal=cal, trace=True)
+        d = sim.simulate(STRAIGHT, "s.py", seed=2, vary=False, cal=cal, trace=True)
+        self.assertEqual(c["trace"]["y"][-1], d["trace"]["y"][-1])
 
     def test_same_seed_same_result(self):
         a = sim.simulate(STRAIGHT, "s.py", seed=5, vary=True, cal=CAL, trace=False)

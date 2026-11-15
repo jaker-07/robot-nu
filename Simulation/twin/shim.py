@@ -30,9 +30,19 @@ class SimStop(BaseException):
 
 
 class World:
-    def __init__(self, cal, seed=0, task="spin", vary=True, t_max=70.0, want_trace=True):
-        self.cal = cal
+    def __init__(self, cal, seed=0, task="spin", vary=True, t_max=70.0, want_trace=True, hardware="auto"):
         env = random.Random(seed * 7919 + 11)
+        unc = cal.get("_unc")
+        if vary and unc:                 # unmeasured model values: a different plausible value each attempt
+            cal = dict(cal)
+            for key in sorted(unc):
+                cal[key] *= 1.0 + max(-2.0, min(2.0, env.gauss(0.0, 1.0))) * unc[key]
+            cal["motor.dead_start_pct"] = max(cal["motor.dead_start_pct"], cal["motor.dead_run_pct"] + 1.0)
+        self.cal = cal
+        self.w = {k: (dict(v) if isinstance(v, dict) else v) for k, v in WIRING.items()}
+        self.hardware = hardware         # "auto" until the program's first drive command settles it
+        if hardware == "nov10":
+            self.w["motor_right"] = {"en": 15, "fwd": 14, "rev": 13}
         if task == "random":
             task = env.choice(("buzzer", "light", "spin"))
         self.task = task
@@ -56,16 +66,17 @@ class World:
         self.pwm_duty = {}
         self.pwm_freq = {}
         self.strip = [(0, 0, 0)] * 5
-        self.trig_of = {tr: n for n, (tr, _) in WIRING["sonar"].items()}
-        self.echo_of = {ec: n for n, (_, ec) in WIRING["sonar"].items()}
+        self.trig_of = {tr: n for n, (tr, _) in self.w["sonar"].items()}
+        self.echo_of = {ec: n for n, (_, ec) in self.w["sonar"].items()}
         self.motor_pins = set()
         for m in ("motor_left", "motor_right"):
-            self.motor_pins.update(WIRING[m].values())
+            self.motor_pins.update(self.w[m].values())
 
         # run bookkeeping
         self.t_first_motion = None
         self.zero_since = None
         self.t_stop = None
+        self.t_reach = None          # first time the robot is at the Task Decider, stopped or not
         self.stop_pose = None
         self.stop_in_zone = False
         self.rest_since = None
@@ -161,8 +172,10 @@ class World:
                     self.events.append({"t": round(self.t_stop, 2), "type": "stop",
                                         "info": "at Task Decider" if self.stop_in_zone else "early"})
 
+        if self.t_reach is None and self.t_first_motion is not None and self.front_gap() <= 20.0 and self.in_last_leg():
+            self.t_reach = t
         # navigation quality, only while driving the course
-        if self.t_first_motion is not None and self.t_stop is None:
+        if self.t_first_motion is not None and self.t_stop is None and (self.t_reach is None or t - self.t_reach < 1.0):
             s, lat, leg = self.track.project(*rb.world_point(-1.5, 0.0))
             if s > self.max_progress:
                 self.max_progress = s
@@ -285,7 +298,7 @@ class World:
     def buzzing(self, t):
         if self.buzz_t1 is not None and t - self.buzz_t1 < 0.05:
             return True
-        pin = WIRING["buzzer"]
+        pin = self.w["buzzer"]
         return pin in self.pwm_on and self.pwm_duty.get(_pwm_key(pin), 0) > 0
 
     # ------------------------------------------------------------- hardware
@@ -299,7 +312,7 @@ class World:
                 self.sonar.trigger(self.trig_of[pid], self.t)
         elif pid in self.motor_pins:
             self.update_motors()
-        elif pid == WIRING["buzzer"] and v == 1 and old == 0 and self.t_stop is not None:
+        elif pid == self.w["buzzer"] and v == 1 and old == 0 and self.t_stop is not None:
             now = self.t / 1e6
             self.buzz_edges += 1
             if self.buzz_t0 is None:
@@ -310,7 +323,7 @@ class World:
         self.advance(15)
         if pid in self.echo_of:
             return self.sonar.echo_level(self.echo_of[pid], self.t)
-        if pid == WIRING["ir"]:
+        if pid == self.w["ir"]:
             return 0 if (self.flag == "on" and self.ir_in_zone()) else 1
         return self.pin_val.get(pid, 0)
 
@@ -323,8 +336,22 @@ class World:
         return (self.pin_val.get(m["fwd"], 0) - self.pin_val.get(m["rev"], 0)) * duty
 
     def update_motors(self):
-        self.robot.ul = self._motor_u(WIRING["motor_left"])
-        self.robot.ur = self._motor_u(WIRING["motor_right"])
+        if self.hardware == "auto":
+            # Which build was this program written for? Decide at its first command that
+            # drives both wheels: if it sets IN2 and IN3 it expects today's robot; anything
+            # else (IN2 + IN4, or the pre-v6 IN1 + IN3) was written for the 10 Nov build,
+            # where the right wheel's forward pin was IN4.
+            pv = self.pin_val
+            ml, mr = self.w["motor_left"], self.w["motor_right"]
+            if (self._motor_u(ml) != 0 and self._motor_u(mr) != 0
+                    and pv.get(11, 0) != pv.get(12, 0) and pv.get(13, 0) != pv.get(14, 0)):
+                if pv.get(12, 0) and pv.get(13, 0):
+                    self.hardware = "now"
+                else:
+                    self.hardware = "nov10"
+                    self.w["motor_right"] = {"en": 15, "fwd": 14, "rev": 13}
+        self.robot.ul = self._motor_u(self.w["motor_left"])
+        self.robot.ur = self._motor_u(self.w["motor_right"])
 
     def pulse_us(self, pid, level, timeout):
         """machine.time_pulse_us: -2 = timed out waiting for the pulse, -1 = pulse too long."""
@@ -364,7 +391,7 @@ def make_modules(world):
         IRQ_RISING, IRQ_FALLING = 1, 2
 
         def __init__(self, id, mode=-1, pull=-1, value=None, **kw):
-            self.id = WIRING["led"] if id == "LED" else int(id)
+            self.id = world.w["led"] if id == "LED" else int(id)
             if value is not None:
                 world.pin_write(self.id, value)
 
@@ -414,7 +441,7 @@ def make_modules(world):
             world.advance(20)
             world.pwm_duty[self.key] = max(0, min(65535, int(v)))
             world.update_motors()
-            if self.id == WIRING["buzzer"] and v > 0 and world.t_stop is not None:
+            if self.id == world.w["buzzer"] and v > 0 and world.t_stop is not None:
                 now = world.t / 1e6
                 f = world.pwm_freq.get(self.key[0], 0)
                 if world.buzz_t0 is None:
@@ -486,7 +513,7 @@ def make_modules(world):
 
         def write(self):
             world.advance(200)
-            if self.pin == WIRING["strip"]:
+            if self.pin == world.w["strip"]:
                 world.strip = list(self.buf)
 
     neo = types.ModuleType("neopixel")

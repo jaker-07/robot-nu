@@ -3,6 +3,7 @@
 
     python3 run.py            open the app in your browser
     python3 run.py --check    run main_vNN.py once through the twin and print the result
+    python3 run.py --history  compare the twin with every result in the testing log
 
 Needs Python 3.8 or newer and nothing else.
 """
@@ -40,6 +41,26 @@ def check(repo):
     return 0
 
 
+def history_check(repo):
+    from twin import history
+    app = App(repo, HERE)
+    rows = history.check(history.finder(repo), app.cal(), 12)
+    bad = 0
+    for r in rows:
+        if not r["available"]:
+            print("  ----  %-20s file not found" % r["program"])
+            continue
+        bad += 0 if r["agrees"] else 1
+        print("  %-5s %-20s twin: reaches the end %3.0f%%, stops there %3.0f%%, stops early %3.0f%%, "
+              "%.1f contacts/run  [%s build]" % ("OK" if r["agrees"] else "DIFF", r["program"], 100 * r["reaches"],
+                                                 100 * r["stop_end"], 100 * r["stop_early"], r["contacts"],
+                                                 "/".join(r["hardware"])))
+        print("        recorded: %s" % r["record"])
+    print("%d of %d recorded results reproduced." % (sum(1 for r in rows if r.get("agrees")),
+                                                    sum(1 for r in rows if r["available"])))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="GE1501 AE1 robot twin")
     ap.add_argument("--repo", default=os.path.dirname(HERE),
@@ -47,9 +68,13 @@ def main():
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--check", action="store_true", help="run a self-check and exit")
+    ap.add_argument("--history", action="store_true",
+                    help="compare the twin with every result recorded in the testing log and exit")
     args = ap.parse_args()
     if args.check:
         return check(args.repo)
+    if args.history:
+        return history_check(args.repo)
     httpd, port, app = serve(args.repo, HERE, args.port)
     if app.store.note:
         print("Note:", app.store.note)

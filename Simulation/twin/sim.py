@@ -27,12 +27,12 @@ OUTCOME_TEXT = {
 
 
 def simulate(source, name="firmware.py", overrides=None, seed=0, task="spin", vary=True,
-             cal=None, t_max=70.0, trace=True):
+             cal=None, t_max=70.0, trace=True, hardware="auto"):
     if cal is None:
         cal = config.load()[0]
     if overrides:
         source = params.apply_overrides(source, overrides)
-    world = World(cal, seed=seed, task=task, vary=vary, t_max=t_max, want_trace=trace)
+    world = World(cal, seed=seed, task=task, vary=vary, t_max=t_max, want_trace=trace, hardware=hardware)
     error = None
     try:
         exec(compile(source, name, "exec"), make_env(world))
@@ -60,7 +60,8 @@ def summarise(w, error, seed, with_trace):
     reached = w.t_stop is not None and w.stop_in_zone
     progress = max(0.0, min(1.0, w.max_progress / (w.track.length - 12.0)))
     nav_time = (w.t_stop - w.t_first_motion) if w.t_stop is not None else None
-    cut = w.t_stop + 0.2 if w.t_stop is not None else 1e9
+    ends = [t for t in (w.t_stop, None if w.t_reach is None else w.t_reach + 1.0) if t is not None]
+    cut = min(ends) + 0.2 if ends else 1e9          # contacts after reaching the Decider are not navigation
     nav_contacts = [c for c in w.contacts if c["t"] <= cut]
     hard = sum(1 for c in nav_contacts if c["speed"] > 8.0 or c["dur"] > 0.5)
     light = len(nav_contacts) - hard
@@ -157,6 +158,10 @@ def summarise(w, error, seed, with_trace):
         "stop_gap": r1(stop_gap),
         "pings": w.sonar.pings,
         "end": w.stopped,
+        "hardware": "now" if w.hardware == "auto" else w.hardware,
+        "reached_end": w.t_reach is not None,
+        "stopped_at_end": reached,
+        "stopped_early": w.t_stop is not None and not reached,
         "error": error,
         "seed": seed,
         "vary": w.vary,

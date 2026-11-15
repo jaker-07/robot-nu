@@ -11,82 +11,88 @@ cd Simulation
 python3 run.py
 ```
 
-Python 3.8 or newer, nothing to install. The app opens in the browser at
-`http://127.0.0.1:8765/`. `python3 run.py --check` prints a self-check without the browser.
+Python 3.8 or newer, nothing to install. The app opens at `http://127.0.0.1:8765/`.
+
+| Command | What it does |
+|---|---|
+| `python3 run.py` | Open the app |
+| `python3 run.py --check` | Run the latest `main_vNN.py` and print the result |
+| `python3 run.py --history` | Compare the twin with every result recorded in the testing log |
+| `python3 -m unittest discover -s tests` | Run the tests |
 
 ## What is on the page
 
 | Part | What it does |
 |---|---|
-| Top view | The course as dimensioned in the brief (legs 30.0 / 30.0 / 25.4 / 23.1 / 35.8 cm wide), the robot, its three sonar beams drawn to the distance the program was told, the path so far, and a red ring wherever it touched a wall. |
-| Control strip | Play/pause, playback speed 0.25× to 16×, New run, which task signal the Decider gives, Vary (random start placement, battery, motors, wall positions), and which program to run. |
-| Plot | Sensor readings and motor power over the run. Click or drag to move through it. |
-| Constants | Every `NAME = number` in the program, as sliders. Changes apply to a copy in memory; the file is never edited. |
-| Trials | Repeats the run 12 to 96 times with variation and reports success rate, contact-free rate, time and score. Click a square to replay that attempt. |
-| Training | Searches the ticked constants for a better set, then checks it against the starting values on fresh attempts. Recommended only if it wins there. |
-| Agent | A Claude conversation with tools over the twin; see below. |
-| History | Every trial batch and training run, stored in `data/experiments.db`. |
-| Calibration | Every physical number in the model, its value and its source. Edit one and the twin re-runs with it. |
+| Top bar | Program, task signal, hardware build, Vary conditions, New run. |
+| Top view | The course on a cm grid, the robot, its three sonar beams drawn to the distance the program was told, the path, and a cross wherever it touched a wall. |
+| Telemetry / Result | Live values at the playback position; outcome and score of the run. |
+| Robot size | Width and length sliders. The rest of the robot scales with them and the run repeats. |
+| Plot | Sensor readings and motor power. Click or drag to move through the run. |
+| Constants | Every `NAME = number` in the program, as sliders. The file is never edited. |
+| Trials | Repeats the run with varied conditions; click a square to replay an attempt. |
+| Training | Searches the ticked constants, then checks the best set on fresh attempts. |
+| Agent | A Claude conversation with tools over the twin. Needs an API key (below). |
+| Log check | Runs every program with a recorded real result and compares. |
+| History | Every trial batch and training run (`data/experiments.db`). |
+| Calibration | Every physical number in the model, its value and source. |
 
-"Export as candidate file" writes a copy of the program with the changed constants to
-`Simulation/candidates/`. Nothing outside `Simulation/` is ever written.
+Nothing outside `Simulation/` is ever written.
 
-## How it works
+## The course
 
-- `twin/shim.py` supplies fake `machine`, `time` and `neopixel` modules. The program's pin
-  writes drive simulated motors; its sleeps and `time_pulse_us` calls advance a simulated
-  clock, which steps the physics. A 35 s run takes about 0.15 s to compute.
-- `twin/robot.py` is the drive (dead band, stall, lag, left/right mismatch), wall contact,
-  and the HC-SR04 model (beam fan, weaker echoes off oblique walls, the 38 ms "busy" period
-  after a missed echo, cross-talk between consecutive pings).
-- `twin/track.py` builds the course from the brief's wall lengths and angles.
-- `twin/sim.py` runs one attempt and scores it against the rubric bands (navigation 40,
-  task 20). The score is an estimate for comparing settings, not a prediction of the mark.
-- `twin/train.py` runs trials and the optimiser. `twin/store.py` is the SQLite history.
-- `twin/agent.py` is the Claude tool loop over the Anthropic Messages API.
-- The wiring in `twin/config.py` is the as-built wiring from the `main_v21.py` docstring.
-  A program that addresses other pins reads nothing, as on the robot.
+The outer wall is taken from the brief (80, 93, 84, 63, 70 cm; 90 and 120 degree
+corners) and the inner wall is drawn 30 cm from it, so every leg is 30 cm wide. The
+brief's own inner-wall lengths do not give a constant width (30.0 / 30.0 / 25.4 / 23.1 /
+35.8 cm); setting `track.uniform_width_cm` to 0 in Calibration uses them instead.
+
+## Hardware builds
+
+The right motor was turned round on 11 Nov, which moved "right wheel forward" from IN4 to
+IN3. A program written before that drives IN4. With Build on `auto` the twin reads the
+build from the program's first drive command and runs it on the robot it was written
+for; before v13b that robot also had a left sensor that returned nothing, because the
+code addressed pins the sensor was not on.
 
 ## How far to trust it
 
-Fitted to three reported facts about v21: it completes, it stops at the Task Decider, and
-a run takes about 20 s. The twin gives 17.7 s driving plus 2.9 s start-up lights.
+`QUESTIONNAIRE.md` lists everything still guessed. Three safeguards against a model that
+only suits one version:
 
-Independent check: with `GAP_RF_MS = 0` the twin shows the one-loop false pivots that v20f
-was written to remove.
+1. **Log check.** The sonar model is fitted to the recorded outcomes of ten program
+   versions at once, not to v21. Eight are reproduced. The two that are not both concern
+   stopping at under 5 cm from a wall (v11g stopped early in reality, v12 did not stop at
+   the Decider; the twin has it the other way round).
+2. **Unmeasured values vary.** In trials and training, every model value still marked
+   assumed or fitted is redrawn within a plausible range on each attempt. A result has to
+   hold across that range. A value stops varying once you enter a measurement.
+3. **Validation before recommendation.** A trained or agent-proposed setting is compared
+   with the original on fresh attempts and recommended only if it wins.
 
-Not validated, in order of importance:
-
-1. **Robot dimensions** are scaled from site photos (the 165 mm breadboard as reference),
-   good to about ±1 cm. The 19 cm sensor span matters most in the 23.1 cm leg.
-2. **Sonar behaviour at oblique angles** is fitted so that v21 gets round the bends without
-   false stops, as it does in reality. No sensor log was available to fit it properly.
-3. **Task Decider** size and position are scaled from the brief's figure and centred on
-   the corridor.
-4. **Spin**: the twin predicts about 373° for `SPIN_TIME = 1.5`. The turn-scrub factor
-   behind that is a guess; measure one real spin and correct it in Calibration.
-5. **Low motor power**: below about 30 % the stall model is the least certain part.
-
-Each of these is one row in the Calibration panel. Measuring the robot (five lengths), one
-3 s straight-line distance and one spin angle would remove most of the guesswork.
-
-## Tests
-
-```
-python3 -m unittest discover -s tests -v
-```
+What the twin predicts for v21 on the 30 cm course: completes and stops in every attempt
+with no wall contact, 17.4 s driving. The uncertain part is the spin: the turn angle
+depends on drive values nobody has measured, and comes out more than 45 degrees off in
+about 1 attempt in 12.
 
 ## The Claude agent
 
-The Agent tab gives Claude tools over the twin: read the program, run attempts and
-trials, train constants, and propose constant or code changes. Each proposal is tested
-against the original on the same 24 varied attempts and written to
-`Simulation/candidates/` only if it wins. The agent cannot edit the robot's own files.
+Put your Anthropic API key on one line in `Simulation/anthropic_key.txt` (ignored by
+git), or set `ANTHROPIC_API_KEY`. The agent can read the program, run attempts and
+trials, train constants, and propose constant or code changes. A proposal is written to
+`Simulation/candidates/` only if it beats the original on the same varied attempts. It
+has been tested with scripted replies only, not against the live API.
 
-To enable it, put your Anthropic API key on one line in `Simulation/anthropic_key.txt`
-(ignored by git), or set `ANTHROPIC_API_KEY` before starting. The default model is
-`claude-sonnet-5-5`; the tab has a selector. Calls go straight from your computer to
-`api.anthropic.com` and are billed to your key. A training request can use several
-hundred simulated attempts but only a handful of API calls.
+## Files
 
-The agent has been tested with scripted replies only, not against the live API.
+| File | Role |
+|---|---|
+| `twin/shim.py` | Fake `machine`, `time`, `neopixel`; the simulated clock and world |
+| `twin/robot.py` | Drive, wall contact, HC-SR04 model |
+| `twin/track.py` | The course |
+| `twin/sim.py` | One attempt and its score (navigation 40 + task 20, mirroring the rubric) |
+| `twin/train.py` | Trials and the optimiser |
+| `twin/history.py` | The recorded results and the log check |
+| `twin/agent.py` | Claude tool loop |
+| `twin/config.py` | Calibration table, wiring, uncertainty ranges |
+| `twin/params.py` | Finds and substitutes the program's constants |
+| `twin/store.py`, `twin/server.py`, `web/index.html` | History, local server, page |
