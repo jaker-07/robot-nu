@@ -50,10 +50,10 @@ class World:
         self.track = Track(cal, env, vary)
         self.robot = Robot(cal, self.track, env, vary, H_US / 1e6)
         self.sonar = Sonar(cal, self.track, self.robot, random.Random(seed * 104729 + 23))
+        self.half_span = self.robot.geo["half_width"]
         self.hold = HOLD_S[task] + (env.uniform(-0.2, 0.2) if vary else 0.0)
         self.delay = cal["decider.delay_s"] * (env.uniform(0.7, 1.6) if vary else 1.0)
         self.flag_reach = cal["decider.flag_reach_cm"]
-        self.half_span = cal["robot.sensor_span_cm"] / 2.0
 
         self.t = 0.0                 # firmware clock, us
         self.phys_t = 0.0            # physics clock, us (multiple of H_US)

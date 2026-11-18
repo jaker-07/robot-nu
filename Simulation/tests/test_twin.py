@@ -4,6 +4,7 @@
 """
 import glob
 import json
+import math
 import os
 import sys
 import unittest
@@ -45,6 +46,21 @@ class TrackTest(unittest.TestCase):
         cal = dict(CAL)
         cal["track.uniform_width_cm"] = 0.0
         self.assertEqual([round(w, 1) for w in Track(cal).widths], [30.0, 30.0, 25.4, 23.1, 35.8])
+
+
+class GeometryTest(unittest.TestCase):
+    def test_plate_matches_the_cad_sketch(self):
+        from twin.robot import geometry
+        g = geometry(CAL)
+        xs = [x for x, _ in g["plate"]]
+        ys = [y for _, y in g["plate"]]
+        self.assertAlmostEqual(max(xs) - min(xs), 17.2, places=6)
+        self.assertAlmostEqual(max(ys) - min(ys), 15.0, places=6)
+        self.assertAlmostEqual(g["chamfer_deg"], 46.6, delta=0.1)        # 133.4 degree front corners
+        rear = g["plate"][2], g["plate"][3]
+        rear_deg = math.degrees(math.atan2(rear[0][1] - rear[1][1], rear[0][0] - rear[1][0]))
+        self.assertAlmostEqual(rear_deg, 30.0, delta=0.1)                  # 120 degree rear corners
+        self.assertGreaterEqual(g["half_width"], 7.5)                       # outline contains the plate
 
 
 class ParamsTest(unittest.TestCase):

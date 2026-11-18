@@ -6,7 +6,8 @@ Every physical number the twin uses lives here, with where it came from:
   figure     scaled off the brief's undimensioned figure
   code       stated in the robot's own code or its docstrings
   log        from the testing log / changelog / trim tests
-  photo      estimated from project-site photos (830-point breadboard, 165 mm, as scale)
+  sketch     your top-view CAD sketch of the plate (18 Nov)
+  photo      estimated from project-site photos
   datasheet  HC-SR04 / L298N / TT-motor typical values
   fitted     tuned so the twin reproduces reported real-world results
   assumed    no evidence; a plausible placeholder, the first things to measure
@@ -22,16 +23,23 @@ import json
 import os
 
 CAL_ENTRIES = [
-    # ---- robot geometry (origin = midpoint of the drive axle, x forward, y left)
-    ("robot.track_cm", 12.6, "photo", "Wheel centre to wheel centre"),
-    ("robot.body_half_width_cm", 7.6, "photo", "Axle line to outer tyre face"),
-    ("robot.sensor_span_cm", 19.0, "photo", "Outer tip to outer tip of the two 45 degree sensors (widest point)"),
-    ("robot.front_reach_cm", 8.5, "photo", "Axle to front sensor face"),
-    ("robot.rear_reach_cm", 12.0, "photo", "Axle to rear edge of plate / breadboard"),
-    ("robot.side_sensor_x_cm", 3.3, "photo", "Side sensor face centre, ahead of the axle"),
-    ("robot.side_sensor_y_cm", 7.6, "photo", "Side sensor face centre, off the centreline"),
-    ("robot.side_sensor_angle_deg", 45.0, "code", "Left/right sensors point 45 degrees outwards (v21 docstring)"),
-    ("robot.ir_x_cm", 6.0, "photo", "IR module on the mast, ahead of the axle"),
+    # ---- robot geometry. Plate from the top-view CAD sketch (18 Nov); front = the 65 mm edge,
+    # whose 46.6 degree chamfers carry the angled sensors. Robot frame: origin at the midpoint
+    # of the drive axle, x forward, y left.
+    ("robot.plate_width_cm", 15.0, "sketch", "Plate width across the straight sides"),
+    ("robot.plate_length_cm", 17.2, "sketch", "Plate length, front edge to rear edge"),
+    ("robot.plate_front_cm", 6.5, "sketch", "Front edge of the plate"),
+    ("robot.plate_rear_cm", 7.5, "sketch", "Rear edge of the plate"),
+    ("robot.plate_side_cm", 6.2, "sketch", "Straight sides of the plate"),
+    ("robot.plate_rear_chamfer_cm", 6.5, "sketch", "Depth of the rear chamfers (120 degree corners); the front chamfers take the rest"),
+    ("robot.axle_cm", 7.6, "assumed", "Axle line, back from the plate's front edge (now: middle of the straight sides)"),
+    ("robot.track_cm", 12.4, "assumed", "Wheel centre to wheel centre (now: tyre outer faces in line with the plate sides)"),
+    ("robot.tyre_width_cm", 2.6, "datasheet", "Tyre width (TT motor wheel)"),
+    ("robot.wheel_dia_cm", 6.5, "datasheet", "Wheel diameter (TT motor wheel)"),
+    ("robot.sensor_depth_cm", 1.4, "datasheet", "Plate edge to ultrasonic sensor face (HC-SR04 board plus transducers)"),
+    ("robot.side_sensor_angle_deg", 0.0, "assumed", "Side sensor axis from straight ahead (0 = square to the chamfer face, 46.6 degrees on this plate)"),
+    ("robot.ir_back_cm", 1.5, "assumed", "IR sensor on the mast, behind the plate's front edge"),
+    ("robot.rear_overhang_cm", 0.0, "assumed", "Anything sticking out past the plate's rear edge (breadboard, battery)"),
     # ---- drive
     ("motor.speed_gain", 0.90, "fitted", "cm/s per % of power above the dead band; fitted to the ~20 s course time"),
     ("motor.dead_run_pct", 18.0, "assumed", "Power below which a turning wheel stops"),
@@ -62,7 +70,7 @@ CAL_ENTRIES = [
     ("decider.depth_cm", 14.0, "figure", "Task Decider depth"),
     ("decider.delay_s", 1.5, "assumed", "Robot at rest to flag appearing"),
     ("decider.flag_reach_cm", 20.0, "assumed", "How far in front of the Decider the IR sensor still sees the flag"),
-    ("start.axle_y_cm", 12.0, "assumed", "Start position: axle this far past the start line (tail on the line)"),
+    ("start.tail_cm", 0.0, "assumed", "Start position: rearmost point of the robot this far past the start line"),
     # ---- run-to-run variation used by trials and training
     ("vary.start_lat_cm", 1.5, "assumed", "Start placement error, sideways (1 sigma)"),
     ("vary.start_heading_deg", 3.0, "assumed", "Start placement error, heading (1 sigma)"),

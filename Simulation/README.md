@@ -27,7 +27,7 @@ Python 3.8 or newer, nothing to install. The app opens at `http://127.0.0.1:8765
 | Top bar | Program, task signal, hardware build, Vary conditions, New run. |
 | Top view | The course on a cm grid, the robot, its three sonar beams drawn to the distance the program was told, the path, and a cross wherever it touched a wall. |
 | Telemetry / Result | Live values at the playback position; outcome and score of the run. |
-| Robot size | Width and length sliders. The rest of the robot scales with them and the run repeats. |
+| Robot size | Plate width and length sliders (defaults from the CAD sketch). Chamfers, sensors, wheels and axle scale with them and the run repeats. |
 | Plot | Sensor readings and motor power. Click or drag to move through the run. |
 | Constants | Every `NAME = number` in the program, as sliders. The file is never edited. |
 | Trials | Repeats the run with varied conditions; click a square to replay an attempt. |

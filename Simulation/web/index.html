@@ -101,10 +101,10 @@ textarea{width:100%;padding:6px 8px;resize:vertical;font-size:13px}
       <table class="kv" id="result"></table>
       <h2>Robot size</h2>
       <div class="size">
-        <span>width</span><input type="range" id="rW" min="12" max="26" step="0.5" aria-label="Robot width"><input type="number" id="nW" min="8" max="30" step="0.1" aria-label="Robot width, cm"><span>cm</span>
-        <span>length</span><input type="range" id="rL" min="14" max="30" step="0.5" aria-label="Robot length"><input type="number" id="nL" min="10" max="36" step="0.1" aria-label="Robot length, cm"><span>cm</span>
+        <span>width</span><input type="range" id="rW" min="10" max="22" step="0.1" aria-label="Plate width"><input type="number" id="nW" min="8" max="26" step="0.1" aria-label="Plate width, cm"><span>cm</span>
+        <span>length</span><input type="range" id="rL" min="12" max="26" step="0.1" aria-label="Plate length"><input type="number" id="nL" min="10" max="30" step="0.1" aria-label="Plate length, cm"><span>cm</span>
       </div>
-      <p class="m" style="margin:6px 0 0;font-size:11px">Width is across the widest point (the angled sensors); length is front sensor face to rear edge. Everything else scales with them.</p>
+      <p class="m" style="margin:6px 0 0;font-size:11px">Plate size, from the CAD sketch. Chamfers, sensors, wheels and axle scale with it. Overall, with sensors: <span id="ovSize"></span>. Dashed line: the outline used for wall contact.</p>
     </aside>
   </div>
 
@@ -295,14 +295,14 @@ function drawDyn(){
     o += ln(o0, e, `stroke="var(--fg)" stroke-width=".8" ${d < 0 ? 'stroke-dasharray="2 3" opacity=".45"' : 'opacity=".7"'}`);
     if (d >= 0 && d <= 100) o += `<circle cx="${px(...e)[0].toFixed(1)}" cy="${px(...e)[1].toFixed(1)}" r="1.8" fill="var(--fg)"/>`;
   }
-  const ht = R.wheel_track / 2;
-  for (const sgn of [1, -1]) o += `<polygon points="${poly(quad(0, sgn * ht, 3.25, 1.3, 0))}" fill="var(--fg)"/>`;
-  o += `<polygon points="${poly(R.hull.map(h => W(h[0], h[1])))}" fill="var(--bg)" fill-opacity=".8" stroke="${tr.c[i] ? 'var(--acc)' : 'var(--fg)'}" stroke-width="${tr.c[i] ? 2 : 1.2}" stroke-linejoin="round"/>`;
-  for (const n of ['L', 'F', 'R']){ const [sx, sy, ang] = R.sensors[n];
-    o += `<polygon points="${poly(quad(sx, sy, 0.5, 2.2, ang * Math.PI / 180))}" fill="var(--fg)"/>`; }
+  const ht = R.wheel_track / 2, hit = tr.c[i];
+  for (const sgn of [1, -1]) o += `<polygon points="${poly(quad(0, sgn * ht, R.wheel_r, R.tyre / 2, 0))}" fill="var(--fg)"/>`;
+  o += `<polygon points="${poly(R.hull.map(h => W(h[0], h[1])))}" fill="none" stroke="${hit ? 'var(--acc)' : 'var(--line)'}" stroke-width="${hit ? 2 : 1}" stroke-dasharray="${hit ? '' : '3 2'}"/>`;
+  o += `<polygon points="${poly(R.plate.map(h => W(h[0], h[1])))}" fill="var(--bg)" fill-opacity=".8" stroke="var(--fg)" stroke-width="1.2" stroke-linejoin="round"/>`;
+  for (const b of R.boards) o += `<polygon points="${poly([b[0], b[1], b[3], b[2]].map(h => W(h[0], h[1])))}" fill="var(--fg)"/>`;
   o += ln(W(0, 0), W(R.sensors.F[0], 0), 'stroke="var(--fg)" stroke-width=".8"');
   const ax = px(...W(0, 0)); o += `<circle cx="${ax[0].toFixed(1)}" cy="${ax[1].toFixed(1)}" r="1.6" fill="var(--fg)"/>`;
-  if (tr.led[i] > 0) for (let k = 0; k < 5; k++){ const q = px(...W(-8.6, (k - 2) * 1.5));
+  if (tr.led[i] > 0) for (let k = 0; k < 5; k++){ const q = px(...W(R.plate[3][0] + 1, (k - 2) * 1.5));
     o += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="1.9" fill="var(--led)"/>`; }
   if (tr.bz[i]){ const b = px(...W(-4, 0)); for (const r of [16, 23])
     o += `<circle cx="${b[0].toFixed(1)}" cy="${b[1].toFixed(1)}" r="${r}" fill="none" stroke="var(--acc)" stroke-width=".9"/>`; }
@@ -635,11 +635,12 @@ $('bCalSave').onclick = async () => {
   S.info = await api('/api/calibration', {changes}); afterCal(`Saved ${Object.keys(changes).length} value(s) as measured.`);
 };
 $('bCalReset').onclick = async () => { S.info = await api('/api/calibration', {reset: true}); afterCal('Defaults restored.'); };
-const LAT = ['robot.track_cm', 'robot.body_half_width_cm', 'robot.sensor_span_cm', 'robot.side_sensor_y_cm'];
-const LON = ['robot.front_reach_cm', 'robot.rear_reach_cm', 'robot.side_sensor_x_cm', 'robot.ir_x_cm'];
-function syncSize(){ const r = S.info.robot; $('rW').value = $('nW').value = +r.width.toFixed(1); $('rL').value = $('nL').value = +r.length.toFixed(1); }
+const LAT = ['robot.plate_width_cm', 'robot.plate_front_cm', 'robot.plate_rear_cm', 'robot.track_cm'];
+const LON = ['robot.plate_length_cm', 'robot.plate_side_cm', 'robot.plate_rear_chamfer_cm', 'robot.axle_cm', 'robot.ir_back_cm'];
+function syncSize(){ const r = S.info.robot; $('rW').value = $('nW').value = +r.width.toFixed(1); $('rL').value = $('nL').value = +r.length.toFixed(1);
+  $('ovSize').textContent = `${r.overall_width} × ${r.overall_length} cm`; }
 async function applySize(){
-  const W = +$('nW').value, L = +$('nL').value; if (!(W >= 8 && W <= 30 && L >= 10 && L <= 36)){ syncSize(); return; }
+  const W = +$('nW').value, L = +$('nL').value; if (!(W >= 8 && W <= 26 && L >= 10 && L <= 30)){ syncSize(); return; }
   const cv = k => S.info.calibration.find(x => x.key === k).value, ky = W / S.info.robot.width, kx = L / S.info.robot.length, changes = {};
   for (const k of LAT) changes[k] = +(cv(k) * ky).toFixed(2);
   for (const k of LON) changes[k] = +(cv(k) * kx).toFixed(2);

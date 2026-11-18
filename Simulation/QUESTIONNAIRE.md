@@ -27,14 +27,17 @@ predictions most. "Now" is the value the twin currently uses.
 
 ## C. Robot, with a ruler
 
-16. `*` Overall width at the widest point, across the two angled sensors. (Now: 19.0 cm.)
-17. Width over the outside of the tyres. (Now: 15.2 cm.)
-18. `*` Wheel spacing, centre of one tyre to centre of the other. (Now: 12.6 cm. Sets the spin angle.)
-19. Axle line to the face of the front sensor. (Now: 8.5 cm.)
-20. Axle line to the rearmost point of the robot. (Now: 12.0 cm.)
-21. Side sensors: how far ahead of the axle line is the centre of each sensor's face, and how far from the robot's centreline? (Now: 3.3 cm ahead, 7.6 cm out.)
-22. Are the side sensors at 45 degrees to straight ahead? (Now: 45.)
-23. IR sensor: how far ahead of the axle line? (Now: 6.0 cm.)
+The plate is now taken from your CAD sketch (15.0 x 17.2 cm). The twin assumes the 65 mm
+edge is the front, because its 46.6 degree chamfers match the angled sensors; say if not.
+
+16. `*` Overall width at the widest point, across the two angled sensors. (Now: 15.9 cm, the sketch plus an assumed 1.4 cm sensor depth.)
+17. Width over the outside of the tyres: do the tyres stick out past the plate's straight sides? (Now: flush, 15.0 cm.)
+18. `*` Wheel spacing, centre of one tyre to centre of the other. (Now: 12.4 cm. Sets the spin angle.)
+19. `*` Distance from the plate's front (65 mm) edge back to the axle line. (Now: 7.6 cm, the middle of the straight sides.)
+20. Does anything stick out past the plate's rear (75 mm) edge, such as the breadboard or battery holder, and by how much? (Now: nothing.)
+21. Side sensors: centred on the front chamfers? How far does each sensor face stand out from the chamfer edge? (Now: centred, 1.4 cm.)
+22. Do the side sensors face square to the chamfer (46.6 degrees) or sit at 45 degrees on a bracket? (Now: square to the chamfer.)
+23. IR sensor: how far behind the plate's front edge? (Now: 1.5 cm.)
 
 ## D. Drive (use trim_test_v3.py for 24 to 26)
 

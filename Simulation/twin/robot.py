@@ -11,31 +11,101 @@ import math
 SOUND_US_PER_CM = 58.31          # there and back, 343 m/s
 
 
+def _convex(points):
+    """Convex hull, counter-clockwise (monotone chain)."""
+    pts = sorted(set((round(x, 4), round(y, 4)) for x, y in points))
+    if len(pts) < 3:
+        return pts
+
+    def half(seq):
+        out = []
+        for p in seq:
+            while len(out) >= 2 and ((out[-1][0] - out[-2][0]) * (p[1] - out[-2][1])
+                                     - (out[-1][1] - out[-2][1]) * (p[0] - out[-2][0])) <= 0:
+                out.pop()
+            out.append(p)
+        return out
+
+    lower, upper = half(pts), half(reversed(pts))
+    return lower[:-1] + upper[:-1]
+
+
+def geometry(cal):
+    """Plate, sensors, wheels and outline in the robot frame (cm; x forward, y left).
+
+    The plate is the octagon from the CAD sketch. The front sensor sits centred on the
+    front edge and each side sensor centred on a front chamfer, faces sensor_depth_cm out
+    from the edge. Wheels run alongside the straight sides on the axle line."""
+    W = cal["robot.plate_width_cm"]
+    L = cal["robot.plate_length_cm"]
+    fe = min(cal["robot.plate_front_cm"], W - 0.5)
+    re = min(cal["robot.plate_rear_cm"], W - 0.5)
+    side = cal["robot.plate_side_cm"]
+    rc = cal["robot.plate_rear_chamfer_cm"]
+    fc = max(0.5, L - side - rc)                       # front chamfer depth
+    xf = cal["robot.axle_cm"]                          # front edge, ahead of the axle
+    xb = xf - L                                        # rear edge
+    hw = W / 2.0
+    plate = [(xf, fe / 2), (xf - fc, hw), (xf - fc - side, hw), (xb, re / 2),
+             (xb, -re / 2), (xf - fc - side, -hw), (xf - fc, -hw), (xf, -fe / 2)]
+
+    d = cal["robot.sensor_depth_cm"]
+    half_board = 2.25                                  # HC-SR04 board is 45 mm wide
+    ax, ay = plate[0]
+    bx, by = plate[1]
+    cl = math.hypot(bx - ax, by - ay)
+    ux, uy = (bx - ax) / cl, (by - ay) / cl            # along the left front chamfer, outwards
+    nx, ny = uy, -ux                                   # its outward normal (forward and left)
+    if nx < 0:
+        nx, ny = -nx, -ny
+    face = math.degrees(math.atan2(ny, nx))
+    ang = cal["robot.side_sensor_angle_deg"] or face
+    mx, my = (ax + bx) / 2, (ay + by) / 2
+    sx, sy = mx + d * nx, my + d * ny                  # left sensor face centre
+    board_l = [(mx + k * half_board * ux + t * nx, my + k * half_board * uy + t * ny)
+               for k in (-1, 1) for t in (0.0, d)]
+    board_f = [(xf + t, k * half_board) for k in (-1, 1) for t in (0.0, d)]
+
+    track = cal["robot.track_cm"]
+    tyre = cal["robot.tyre_width_cm"]
+    r = cal["robot.wheel_dia_cm"] / 2
+    wheels = [(x, s * (track / 2 + k * tyre / 2)) for s in (1, -1) for x in (-r, r) for k in (-1, 1)]
+
+    extra = []
+    oh = cal["robot.rear_overhang_cm"]
+    if oh > 0:
+        extra = [(xb - oh, re / 2), (xb - oh, -re / 2)]
+    pts = plate + board_l + [(x, -y) for x, y in board_l] + board_f + wheels + extra
+    hull = _convex(pts)
+    return {
+        "plate": plate,
+        "hull": hull,
+        "sensors": {"L": (sx, sy, math.radians(ang)), "F": (xf + d, 0.0, 0.0), "R": (sx, -sy, -math.radians(ang))},
+        "sensor_deg": ang,
+        "chamfer_deg": face,
+        "boards": [board_l, [(x, -y) for x, y in board_l], board_f],
+        "ir_x": xf - cal["robot.ir_back_cm"],
+        "track": track, "tyre": tyre, "wheel_r": r,
+        "half_width": max(abs(y) for _, y in hull),
+        "front": max(x for x, _ in hull),
+        "rear": -min(x for x, _ in hull),
+    }
+
+
 def build_hull(cal):
-    """Outline of the robot seen from above (robot frame, counter-clockwise).
-    The widest point is the outer tip of the 45 degree sensors."""
-    fr = cal["robot.front_reach_cm"]
-    rr = cal["robot.rear_reach_cm"]
-    hw = cal["robot.body_half_width_cm"]
-    span = cal["robot.sensor_span_cm"] / 2.0
-    sx = cal["robot.side_sensor_x_cm"]
-    left = [(fr, 2.3), (sx + 2.3, span - 2.5), (sx - 0.9, span), (sx - 2.8, hw),
-            (-rr + 2.0, hw - 0.35), (-rr, hw - 2.1)]
-    right = [(x, -y) for x, y in reversed(left)]
-    return left + right
+    return geometry(cal)["hull"]
 
 
 class Robot:
     def __init__(self, cal, track, rng, vary, h):
         self.track = track
-        self.hull = build_hull(cal)
+        g = geometry(cal)
+        self.geo = g
+        self.hull = g["hull"]
         self.reach = max(math.hypot(x, y) for x, y in self.hull) + 1.5
-        self.wheel_track = cal["robot.track_cm"]
-        ang = math.radians(cal["robot.side_sensor_angle_deg"])
-        sx, sy = cal["robot.side_sensor_x_cm"], cal["robot.side_sensor_y_cm"]
-        self.sensors = {"L": (sx, sy, ang), "F": (cal["robot.front_reach_cm"], 0.0, 0.0),
-                        "R": (sx, -sy, -ang)}
-        self.ir_x = cal["robot.ir_x_cm"]
+        self.wheel_track = g["track"]
+        self.sensors = g["sensors"]
+        self.ir_x = g["ir_x"]
         self.wall_r = cal["track.wall_radius_cm"]
 
         gain = cal["motor.speed_gain"]
@@ -57,7 +127,7 @@ class Robot:
         head = rng.gauss(0.0, cal["vary.start_heading_deg"]) if vary else 0.0
         lat = max(-4.0, min(4.0, lat))
         self.x = track.start_mid[0] + lat
-        self.y = cal["start.axle_y_cm"]
+        self.y = g["rear"] + cal["start.tail_cm"]
         self.th = math.radians(90.0 + head)
         self.vl = self.vr = 0.0          # wheel ground speeds, cm/s
         self.ul = self.ur = 0.0          # commanded power, signed %

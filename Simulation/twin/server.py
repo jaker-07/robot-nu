@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import glob
 import json
+import math
 import os
 import re
 import threading
@@ -20,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import config, history, params, sim, train
 from .agent import DEFAULT_MODEL, MODELS, Agent, find_key
-from .robot import build_hull
+from .robot import geometry
 from .store import Store
 from .track import Track
 
@@ -70,19 +71,19 @@ class App:
     def info(self):
         cal, src = config.load(self.cal_path)
         fw = self.firmware()
-        ang = cal["robot.side_sensor_angle_deg"]
-        sx, sy = cal["robot.side_sensor_x_cm"], cal["robot.side_sensor_y_cm"]
+        g = geometry(cal)
+        r2 = lambda pts: [[round(x, 2), round(y, 2)] for x, y in pts]
+        sen = {k: [round(v[0], 2), round(v[1], 2), round(math.degrees(v[2]), 1)] for k, v in g["sensors"].items()}
         return {
             "firmware": fw,
             "default": fw[0]["id"] if fw else None,
             "track": Track(cal).to_json(),
             "robot": {
-                "hull": [[round(x, 2), round(y, 2)] for x, y in build_hull(cal)],
-                "wheel_track": cal["robot.track_cm"],
-                "sensors": {"L": [sx, sy, ang], "F": [cal["robot.front_reach_cm"], 0, 0], "R": [sx, -sy, -ang]},
-                "ir_x": cal["robot.ir_x_cm"],
-                "width": cal["robot.sensor_span_cm"],
-                "length": cal["robot.front_reach_cm"] + cal["robot.rear_reach_cm"],
+                "hull": r2(g["hull"]), "plate": r2(g["plate"]), "boards": [r2(b) for b in g["boards"]],
+                "wheel_track": g["track"], "tyre": g["tyre"], "wheel_r": g["wheel_r"],
+                "sensors": sen, "ir_x": round(g["ir_x"], 2),
+                "width": cal["robot.plate_width_cm"], "length": cal["robot.plate_length_cm"],
+                "overall_width": round(2 * g["half_width"], 1), "overall_length": round(g["front"] + g["rear"], 1),
             },
             "uncertain": {k: v for k, v in config.UNCERTAIN.items() if src.get(k) in ("assumed", "fitted")},
             "wall_r": cal["track.wall_radius_cm"],
