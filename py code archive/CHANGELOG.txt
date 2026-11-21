@@ -1,6 +1,6 @@
 GE1501 AE1 Robot - Code Changelog
 Navigation files are listed in the order they were made (v8a came after v10).
-Current version: navigation/navigation_v12.py
+Current version: main_v21.py (repository root)
 
 TEST SCRIPTS (tests/)
 - motor_test_v1: First motor test. Drives IN1-IN4 through left, right, both forward and both reverse, with the ENA/ENB caps fitted.
@@ -9,6 +9,11 @@ TEST SCRIPTS (tests/)
 - ultrasonic_test_v2: Left sensor moved to GP28/GP27. No echo now reads 400.
 - ultrasonic_test_v3: Front sensor added (GP18/GP19).
 - trim_test_v1: 4 s straight run with no steering to measure motor mismatch. Result: RIGHT_TRIM 0.90, LEFT_TRIM 1.0.
+- trim_test_v2: Trim test at 45% (the speed v13b drives at; v1 measured at 35%). Starts from left 1.0, right 0.9.
+- ultrasonic_test_v4: Sensor test menu matching v13b's reading method (6 ms timeout, busy-skip, 55 cm cap, 999 = no echo). 30 readings per test, PASS/CHECK, results saved to sensor_tests.csv on the Pico.
+- ultrasonic_test_v4a: Live stream of all three sensors over USB. "---" = no echo.
+- motor_test_v3: Motor check after the right motor was rotated 180 deg (right forward now IN3). Modes: direction, sweep 25-65% to find the stall point, pair at BASE_SPEED with trims.
+- trim_test_v3: Trim test with the flipped right motor (forward IN3). BASE 50, RIGHT_TRIM 1.05 (the v13d values).
 
 NAVIGATION (navigation/)
 - v1: First version. 45 deg side sensors converted with d*cos45, proportional centring with a +/-2 cm deadband, front-sensor turns, stop when both sides open.
@@ -35,9 +40,32 @@ NAVIGATION (navigation/)
 - v11f: v11e plus per-loop CSV logging on the Pico (run_N.csv).
 - v11g: Stop needs both conditions for 2 loops in a row. Stop distance 5 cm.
 - v11h: Sensors read like the test script, sensor status logged, big readings ignored for steering. Navigation changed and it no longer got through the maze.
-- v12: v8 navigation unchanged plus the end stop (front under 5 cm and a side open, 2 loops in a row). No logging. CURRENT.
+- v12: v8 navigation unchanged plus the end stop (front under 5 cm and a side open, 2 loops in a row). No logging.
+- working10_11_2026 (py code archive/): v12 with END_CONFIRM 3. Log: left sensor gave no echo on all 438 loops; stopped at 20 s during a right turn.
+- v13_test: working10_11_2026 plus: end check from 10 cm (was 5) for 4 loops; side spike filter (a reading that jumps more than 8 cm further away must repeat 3 loops before it is used); per-loop run_N.csv log and run_N_summary.txt.
+- v13a: Left sensor pins fixed to GP16/GP17 to match the wiring (GP28/GP27 had nothing on them, so the left sensor was never read). "TO TEST navigation_v13a.py" is an identical copy.
+- v13b: Stopped at a corner in v13a. Pivot direction taken from the current raw readings and locked until the front is clear. End check needs a side with no echo at all (999, nothing within about 1 m), not just over 55 cm. Each change has its own switch (PIVOT_FROM_RAW, END_NEEDS_NO_ECHO).
+- v13c: Fresh start from working10_11_2026 (no spike filter or logging) with the left pins fixed. 10 ms gap after the left ping. BASE 50, MAX 65, RIGHT_TRIM 1.1, KP 2, DEADBAND 1.5, FRONT_TURN 5, STOP 8.
+- v13d: Right motor rotated 180 deg (11 Nov): right forward now IN3, reverse IN4. RIGHT_TRIM 1.05, FRONT_TURN 10, STOP 14.
+- (no v14)
+- v15: RIGHT_TRIM 0.95.
+- v16: Slower and gentler: BASE 40, MIN 25, MAX 50, KP 1.5, DEADBAND 2. Loop pause 20 -> 5 ms.
+- v17: MAX 55, RIGHT_TRIM 0.92, FRONT_TURN 4, STOP 8. Logs left/right readings to run_N.csv and prints them over USB.
+- v18: Log records the uncapped readings (-1 = no echo, -2 = sensor busy) and the front sensor too. Navigation unchanged.
+
+MAIN PROGRAMS (repository root)
+- main_v19: v18 with logging removed. FRONT_TURN 8, MAX_CM 65, STOP 12.
+- main_v20 (file header says v20g; v20a-c not kept): v19 driving plus task detection and tasks. Changes through v20d-g:
+  - v20d: v19 driving kept, with a 60 s run timeout and everything switched off however the program ends. Buzzer made a plain on/off pin with the tone made in software (GP26 shares a PWM channel with ENA, so as PWM it buzzed whenever the motors ran).
+  - v20e: After stopping, waits for the Task Decider's flag in front of the IR sensor (GP22). Buzzer 1 s, light, and spin (back up 0.5 s, pause 0.2 s, spin SPIN_TIME 1.5 s).
+  - v20f: 5 ms gap between right and front pings (stray echoes faked a wall ahead). Pivot direction held until the front is clear.
+  - v20g: Task chosen by how long the flag is held (about 3 s buzzer, 5 s light, 10 s spin), decided only after the flag goes. Holds under 2 s ignored.
+- main_v21: CURRENT. Cleaned-up rewrite of v20g with the same driving. Task thresholds: under 4 s = buzzer, 4-7.5 s = light, 7.5 s and over = spin. Green start-up light sequence (about 2 s) plus 1 s before moving. Run timeout and maximum flag wait removed. Reported 14 Nov: completes the course and stops at the end in about 20 s. SPIN_TIME 1.5 s still needs tuning for exactly 360 deg.
 
 KEY FINDINGS
 - Holding the last good reading keeps navigation stable; weakening it (v9, v10) made runs worse.
 - Logs showed v8's left sensor returning no echo, so v8 mainly follows the right wall plus front-sensor turns.
 - Change one thing per test; bundled changes (v9) could not be traced to a cause.
+- Until v13a the code read the left sensor on GP28/GP27, but the wiring had it on GP16/GP17. That is why the v8 and working10_11_2026 logs show the left sensor returning nothing.
+- GP26 shares a PWM channel with ENA (GP10), so the buzzer cannot be a PWM pin while the motors run.
+- Programs from before 11 Nov drive the right motor forward on IN4; after the motor flip it is IN3.
